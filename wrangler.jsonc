@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cardcap",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-06-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "AI_EXTRACTOR": "openai",
+    "OPENAI_MODEL": "gpt-5.4-mini"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cardcap-db",
+      "database_id": "d3a74ece-fba4-4d92-a167-dfa21998c9ab",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "CARD_IMAGES",
+      "bucket_name": "cardcap-card-images"
+    }
+  ]
+}
