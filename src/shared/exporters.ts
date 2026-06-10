@@ -97,6 +97,42 @@ export function exportContactsVcard(contacts: Contact[]): string {
     .join('\r\n')
 }
 
+const ICONTACT_HEADERS = ['Email', 'First Name', 'Last Name', 'Company', 'Job Title', 'Phone', 'Street', 'City', 'State', 'Zip', 'Notes']
+
+export function splitContactName(name: string): { firstName: string; lastName: string } {
+  const trimmed = name.trim()
+  if (!trimmed) return { firstName: '', lastName: '' }
+  const spaceIndex = trimmed.indexOf(' ')
+  if (spaceIndex === -1) return { firstName: trimmed, lastName: '' }
+  return { firstName: trimmed.slice(0, spaceIndex), lastName: trimmed.slice(spaceIndex + 1).trim() }
+}
+
+export function exportContactsIContactCsv(contacts: Contact[]): string {
+  const rows = contacts.map((contact) => {
+    const { firstName, lastName } = splitContactName(contact.name)
+    const extraPhones = contact.phones.slice(1)
+    const notes = [contact.notes, extraPhones.length ? `Other phones: ${extraPhones.join('; ')}` : '']
+      .filter(Boolean)
+      .join(' | ')
+    return [
+      contact.email,
+      firstName,
+      lastName,
+      contact.company,
+      contact.role,
+      contact.phones[0] || '',
+      contact.address,
+      '',
+      '',
+      '',
+      notes,
+    ]
+      .map((value) => csvCell(value))
+      .join(',')
+  })
+  return [ICONTACT_HEADERS.join(','), ...rows].join('\n')
+}
+
 export function exportContactsHtml(contacts: Contact[]): string {
   const cards = contacts
     .map((contact) => {
