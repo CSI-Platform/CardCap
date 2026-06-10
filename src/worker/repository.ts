@@ -77,6 +77,14 @@ export async function ensureSchema(db: D1Database): Promise<void> {
           updated_at TEXT NOT NULL
         )`,
       ),
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS login_tokens (
+          token_hash TEXT PRIMARY KEY,
+          email TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at TEXT NOT NULL DEFAULT ''
+        )`,
+      ),
     ])
     .catch((error: unknown) => {
       throw new Error(`Failed to ensure D1 schema: ${String(error)}`)
@@ -283,4 +291,41 @@ function status(value: string): ContactStatus {
 
 function imageUrl(key: string): string {
   return key ? `/api/images/${encodeURIComponent(key)}` : ''
+}
+
+export async function upsertUser(db: D1Database, userId: string, email: string, authProvider: string): Promise<void> {
+  await ensureSchema(db)
+  const now = new Date().toISOString()
+  await ensureUser(db, userId, email, email, authProvider, now)
+}
+
+export async function countExtractionJobsSince(db: D1Database, userId: string, sinceIso: string): Promise<number> {
+  await ensureSchema(db)
+  const row = await db
+    .prepare('SELECT COUNT(*) AS total FROM extraction_jobs WHERE user_id = ? AND created_at >= ?')
+    .bind(userId, sinceIso)
+    .first<{ total: number }>()
+  return row?.total ?? 0
+}
+
+export async function createLoginToken(db: D1Database, tokenHash: string, email: string, expiresAt: string): Promise<void> {
+  await ensureSchema(db)
+  await db
+    .prepare('INSERT INTO login_tokens (token_hash, email, expires_at) VALUES (?, ?, ?)')
+    .bind(tokenHash, email, expiresAt)
+    .run()
+}
+
+export async function consumeLoginToken(db: D1Database, tokenHash: string, now = new Date()): Promise<string | null> {
+  await ensureSchema(db)
+  const row = await db
+    .prepare('SELECT email, expires_at, used_at FROM login_tokens WHERE token_hash = ?')
+    .bind(tokenHash)
+    .first<{ email: string; expires_at: string; used_at: string }>()
+  if (!row || row.used_at || row.expires_at <= now.toISOString()) return null
+  await db
+    .prepare('UPDATE login_tokens SET used_at = ? WHERE token_hash = ?')
+    .bind(now.toISOString(), tokenHash)
+    .run()
+  return row.email
 }

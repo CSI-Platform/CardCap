@@ -19,9 +19,25 @@ Use this folder for future development, commits, and deploys. The earlier Codex 
 The Worker expects these secrets to be configured in Cloudflare:
 
 - `OPENAI_API_KEY`
-- `BETA_ACCESS_CODE`
+- `SESSION_SECRET` (32+ random characters; rotating it signs everyone out)
+- `RESEND_API_KEY` (sender domain must be verified in Resend, DKIM green)
+- `TURNSTILE_SECRET_KEY` (paired with the public `TURNSTILE_SITE_KEY` var in wrangler.jsonc)
+
+`BETA_ACCESS_CODE` is retired and should be deleted from the Worker.
 
 Do not commit secret values. Local development secrets belong in `.dev.vars`, which is ignored by git.
+
+## First Deploy of Magic-Link Auth (one-time sequence)
+
+1. Snapshot: `npx wrangler d1 export cardcap-db --remote --output backup-2026-06-09.sql`
+2. Fresh start (wipes pre-auth beta data): `npx wrangler d1 execute cardcap-db --remote --command "DELETE FROM extraction_jobs; DELETE FROM contacts; DELETE FROM users;"`
+3. Apply migrations: `npx wrangler d1 migrations apply cardcap-db --remote`
+4. Create a Turnstile widget in the Cloudflare dashboard (Managed mode, hostname `cardcap.codylecates.workers.dev`); paste the site key into `TURNSTILE_SITE_KEY` in `wrangler.jsonc`, then `npx wrangler secret put TURNSTILE_SECRET_KEY`
+5. `npx wrangler secret put SESSION_SECRET` and `npx wrangler secret put RESEND_API_KEY`
+6. Confirm the `SENDER_EMAIL` var's domain is verified in Resend (adjust the var if using a different domain)
+7. `npx wrangler secret delete BETA_ACCESS_CODE`
+8. `npm run build && npx wrangler deploy`
+9. Smoke: `/api/health` returns `ok`; full sign-in round-trip from a phone; check a corporate-style inbox's spam folder for the link; upload one card and confirm `extractionMode: "openai"`; download the iContact CSV and test-import it into iContact.
 
 ## Local Development
 

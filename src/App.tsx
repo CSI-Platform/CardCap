@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import { LoginGate } from './components/LoginGate'
 import { apiGet, apiJson, apiUpload } from './lib/api'
 import { contactDisplayName, groupContactsByInitial, sortContactsByName } from './shared/contacts'
 import { contactNeedsReview, reviewedContact } from './shared/review'
@@ -14,7 +15,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
-  const [accessCode, setAccessCode] = useState('')
+  const [userEmail, setUserEmail] = useState('')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const fileInput = useRef<HTMLInputElement | null>(null)
@@ -41,7 +42,7 @@ function App() {
         selectContact(sortedContacts.find((contact) => contact.id === nextId) || sortedContacts[0] || null)
       } catch (err) {
         const message = messageFrom(err)
-        if (message.includes('Private beta code') || message.includes('Cloudflare Access')) {
+        if (message.includes('Sign in to continue')) {
           setAuthRequired(true)
           setError('')
         } else {
@@ -55,8 +56,23 @@ function App() {
   )
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => void loadContacts(), 0)
-    return () => window.clearTimeout(timeout)
+    let cancelled = false
+    async function boot() {
+      try {
+        const me = await apiGet<{ email: string }>('/api/me')
+        if (cancelled) return
+        setUserEmail(me.email)
+        await loadContacts()
+      } catch {
+        if (cancelled) return
+        setAuthRequired(true)
+        setLoading(false)
+      }
+    }
+    void boot()
+    return () => {
+      cancelled = true
+    }
   }, [loadContacts])
 
   const filteredContacts = useMemo(() => {
@@ -143,19 +159,19 @@ function App() {
     }
   }
 
-  async function unlockBeta() {
-    if (!accessCode.trim()) return
-    setBusy(true)
-    setError('')
-    try {
-      await apiJson<{ ok: boolean }>('/api/session', 'POST', { code: accessCode.trim() })
-      setAccessCode('')
-      await loadContacts()
-    } catch (err) {
-      setError(messageFrom(err))
-    } finally {
-      setBusy(false)
-    }
+  async function handleSignedIn() {
+    setAuthRequired(false)
+    const me = await apiGet<{ email: string }>('/api/me').catch(() => null)
+    setUserEmail(me?.email || '')
+    await loadContacts()
+  }
+
+  async function signOut() {
+    await apiJson<{ ok: boolean }>('/api/auth/logout', 'POST').catch(() => undefined)
+    setUserEmail('')
+    setContacts([])
+    selectContact(null)
+    setAuthRequired(true)
   }
 
   async function saveDraft() {
@@ -272,33 +288,20 @@ function App() {
           <button className="btn" type="button" onClick={() => exportUrl('/api/export.html')}>
             HTML
           </button>
+          <button className="btn" type="button" onClick={() => exportUrl('/api/export.icontact.csv')}>
+            iContact CSV
+          </button>
+          {userEmail && (
+            <button className="btn" type="button" onClick={() => void signOut()} title={userEmail}>
+              Sign out
+            </button>
+          )}
         </div>
       </header>
 
       {(notice || error) && <div className={error ? 'banner error' : 'banner'}>{error || notice}</div>}
 
-      {authRequired && (
-        <main className="unlock-screen">
-          <section className="unlock-panel">
-            <h2>Private beta</h2>
-            <p>Enter the CardCap beta code to open your contact workspace.</p>
-            <label>
-              Beta code
-              <input
-                type="password"
-                value={accessCode}
-                onChange={(event) => setAccessCode(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void unlockBeta()
-                }}
-              />
-            </label>
-            <button className="btn primary" type="button" onClick={() => void unlockBeta()} disabled={busy || !accessCode.trim()}>
-              Unlock
-            </button>
-          </section>
-        </main>
-      )}
+      {authRequired && <LoginGate onSignedIn={() => void handleSignedIn()} />}
 
       {!authRequired && (
       <main className="workspace">

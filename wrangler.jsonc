@@ -14,7 +14,9 @@
   },
   "vars": {
     "AI_EXTRACTOR": "openai",
-    "OPENAI_MODEL": "gpt-5.4-mini"
+    "OPENAI_MODEL": "gpt-5.4-mini",
+    "SENDER_EMAIL": "cardcap@copperstateit.com",
+    "TURNSTILE_SITE_KEY": ""
   },
   "d1_databases": [
     {
@@ -29,5 +31,10 @@
       "binding": "CARD_IMAGES",
       "bucket_name": "cardcap-card-images"
     }
+  ],
+  "ratelimits": [
+    { "name": "RL_LINK_EMAIL", "namespace_id": "1001", "simple": { "limit": 2, "period": 60 } },
+    { "name": "RL_LINK_IP", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_UPLOAD", "namespace_id": "1003", "simple": { "limit": 10, "period": 60 } }
   ]
 }
