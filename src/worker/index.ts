@@ -1,16 +1,19 @@
 import {
   exportContactsCsv,
   exportContactsHtml,
+  exportContactsIContactCsv,
   exportContactsJson,
   exportContactsVcard,
 } from '../shared/exporters'
 import { sortContactsByName } from '../shared/contacts'
 import { findDuplicateContact, mergeDuplicateContact } from '../shared/duplicates'
 import { parseContactsImport, type ImportedContact } from '../shared/importers'
+import { DAILY_EXTRACTION_LIMIT, utcDayStartIso } from '../shared/quota'
 import type { Contact, ContactStatus } from '../shared/types'
-import { createBetaSession, currentUser } from './auth'
+import { allowed, authConfig, currentUser, logout, rateLimiter, requestLoginLink, verifyLogin } from './auth'
 import { extractCard } from './extract'
 import {
+  countExtractionJobsSince,
   deleteContact,
   getContact,
   listContacts,
@@ -43,13 +46,29 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true, extractor: env.AI_EXTRACTOR })
   }
 
-  if (request.method === 'POST' && url.pathname === '/api/session') {
-    return createBetaSession(request, env)
+  if (request.method === 'GET' && url.pathname === '/api/auth/config') {
+    return authConfig(env)
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/auth/request-link') {
+    return requestLoginLink(request, env, url)
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/auth/verify') {
+    return verifyLogin(env, url)
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
+    return logout()
   }
 
   const user = await currentUser(request, env)
   if (!user) {
-    return json({ error: 'Private beta code or Cloudflare Access sign-in is required.' }, 401)
+    return json({ error: 'Sign in to continue.' }, 401)
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/me') {
+    return json({ email: user.email, id: user.id })
   }
 
   if (request.method === 'GET' && url.pathname === '/api/contacts') {
@@ -107,6 +126,14 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return download(exportContactsJson(sortContactsByName(await listContacts(env.DB, user.id))), 'application/json; charset=utf-8', 'cardcap-contacts.json')
   }
 
+  if (request.method === 'GET' && url.pathname === '/api/export.icontact.csv') {
+    return download(
+      exportContactsIContactCsv(sortContactsByName(await listContacts(env.DB, user.id))),
+      'text/csv; charset=utf-8',
+      'cardcap-icontact.csv',
+    )
+  }
+
   if (request.method === 'GET' && url.pathname === '/api/export.html') {
     return download(exportContactsHtml(sortContactsByName(await listContacts(env.DB, user.id))), 'text/html; charset=utf-8', 'cardcap-contacts.html')
   }
@@ -115,6 +142,16 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 }
 
 async function uploadCard(request: Request, env: Env, userId: string): Promise<Response> {
+  if (!(await allowed(rateLimiter(env, 'RL_UPLOAD'), userId))) {
+    return json({ error: 'Slow down a moment — too many uploads at once.' }, 429)
+  }
+  const usedToday = await countExtractionJobsSince(env.DB, userId, utcDayStartIso())
+  if (usedToday >= DAILY_EXTRACTION_LIMIT) {
+    return json(
+      { error: `Daily limit of ${DAILY_EXTRACTION_LIMIT} cards reached — resets tonight (UTC). Email cody@copperstateit.com if you need more.` },
+      429,
+    )
+  }
   const form = await request.formData()
   const file = form.get('file')
   if (!(file instanceof File)) {
