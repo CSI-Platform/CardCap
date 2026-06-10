@@ -1,3 +1,8 @@
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5-mini
 AI_EXTRACTOR=mock
+
+# Auth (local dev: leave SESSION_SECRET unset to auto-login as the local user)
+SESSION_SECRET=
+RESEND_API_KEY=
+TURNSTILE_SECRET_KEY=
