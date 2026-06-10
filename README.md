@@ -5,13 +5,15 @@ Phone-first business card capture for turning card photos into a searchable mini
 ## What Works Now
 
 - Open the app on desktop or phone-size browser.
+- Sign in with a one-time email link (magic link); each user has a private contact list.
 - Tap Add Cards to take a photo or upload card images.
 - Store uploaded images in the local Cloudflare R2 binding.
 - Store contacts in the local Cloudflare D1 database.
 - Review the source card beside or above editable contact fields.
 - Save searchable contacts with email, phone, website, map, notes, tags, status, and next step.
-- Export CSV, vCard, JSON, or standalone HTML.
+- Export CSV, vCard, JSON, standalone HTML, or an iContact-ready CSV for email-marketing imports.
 - Run AI extraction in mock mode locally, or switch to OpenAI with an API key.
+- Abuse guards: Turnstile on sign-in, per-minute rate limits, and a 25-cards/day extraction quota per user.
 
 ## Local Development
 
@@ -53,6 +55,12 @@ AI_EXTRACTOR=openai
 
 Restart the dev server after changing `.dev.vars`.
 
+## Auth in Local Dev
+
+- Leave `SESSION_SECRET` unset in `.dev.vars` to auto-sign-in as the local user (no email needed).
+- Set `SESSION_SECRET` to any 32+ character string to exercise the real magic-link flow; with no `RESEND_API_KEY`, the sign-in link is printed to the dev-server console instead of emailed.
+- `TURNSTILE_SECRET_KEY` unset means the Turnstile check is skipped locally.
+
 ## Cloudflare Setup Later
 
 Cloudflare can host the frontend, Worker API, database, and image storage for this version. No Supabase is needed for the first SaaS cut.
@@ -76,6 +84,5 @@ npx wrangler deploy
 
 ## Current Production Gaps
 
-- Auth is not wired yet. The Worker uses one local user record so the capture flow can be built and tested first.
-- Production D1 and R2 resources have not been created yet.
-- OpenAI extraction is wired but not enabled until `OPENAI_API_KEY` is provided and `AI_EXTRACTOR=openai`.
+- Magic-link auth is implemented but not yet deployed: production still needs `SESSION_SECRET`, `RESEND_API_KEY`, and Turnstile keys (see DEPLOYMENT.md).
+- The deployed database still holds pre-auth beta data; the deploy sequence snapshots then wipes it (fresh start).
