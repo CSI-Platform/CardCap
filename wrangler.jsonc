@@ -15,8 +15,8 @@
   "vars": {
     "AI_EXTRACTOR": "openai",
     "OPENAI_MODEL": "gpt-5.4-mini",
-    "SENDER_EMAIL": "cardcap@copperstateit.com",
-    "TURNSTILE_SITE_KEY": ""
+    "SENDER_EMAIL": "cody@copperstateit.com",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAADix1GoVxjHxnCXP"
   },
   "d1_databases": [
     {
