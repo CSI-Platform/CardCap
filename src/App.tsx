@@ -274,14 +274,26 @@ function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main">
+        Skip to contacts
+      </a>
+      <div className="brand-bar" aria-hidden="true" />
       <header className="topbar">
-        <div>
-          <h1>CardCap</h1>
-          <p>Business cards in. Follow-up CRM out.</p>
+        <div className="brand">
+          <picture>
+            <source srcSet="/brand/csi-monogram-dark.svg" media="(prefers-color-scheme: dark)" />
+            <img className="brand-mark" src="/brand/csi-monogram-light.svg" alt="" width="44" height="44" />
+          </picture>
+          <div className="brand-text">
+            <span className="brand-org">Copper State Intelligence</span>
+            <h1>CardCap</h1>
+            <p className="tagline">Business cards in. Follow-up CRM out.</p>
+          </div>
         </div>
         <div className="toolbar">
+          <div className="toolbar-group" role="group" aria-label="Capture">
           <button className="btn primary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
-            Add Cards
+            Add cards
           </button>
           <input
             ref={fileInput}
@@ -302,6 +314,8 @@ function App() {
             accept=".csv,.vcf,.vcard,.json,text/csv,text/vcard,application/json"
             onChange={(event) => void handleImport(event.currentTarget.files)}
           />
+          </div>
+          <div className="toolbar-group" role="group" aria-label="Export">
           <button className="btn" type="button" onClick={() => exportUrl('/api/export.csv')}>
             CSV
           </button>
@@ -317,20 +331,25 @@ function App() {
           <button className="btn" type="button" onClick={() => exportUrl('/api/export.icontact.csv')}>
             iContact CSV
           </button>
+          </div>
           {userEmail && (
-            <>
+            <div className="toolbar-group" role="group" aria-label="Account">
               <button className="btn" type="button" onClick={() => setPasswordPanelOpen(true)} title={userEmail}>
                 Set password
               </button>
               <button className="btn" type="button" onClick={() => void signOut()} title={userEmail}>
                 Sign out
               </button>
-            </>
+            </div>
           )}
         </div>
       </header>
 
-      {(notice || error) && <div className={error ? 'banner error' : 'banner'}>{error || notice}</div>}
+      {(notice || error) && (
+        <div className={error ? 'banner error' : 'banner'} role={error ? 'alert' : 'status'}>
+          {error || notice}
+        </div>
+      )}
 
       {passwordPanelOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setPasswordPanelOpen(false)}>
@@ -391,7 +410,7 @@ function App() {
       {authRequired && <LoginGate onSignedIn={() => void handleSignedIn()} />}
 
       {!authRequired && (
-      <main className="workspace">
+      <main className="workspace" id="main" tabIndex={-1}>
         <aside className="sidebar">
           <div className="filters">
             <label>

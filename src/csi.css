@@ -1,0 +1,137 @@
+/* CSI — Copper State Intelligence · shared brand stylesheet v1.0
+   Direction: Ledger (2c) · Type: Atkinson Hyperlegible Next + Mono
+   Load fonts first:
+   <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&family=Atkinson+Hyperlegible+Mono:wght@400;500&display=swap" rel="stylesheet">
+*/
+:root {
+  /* Core */
+  --csi-paper: #FFFFFF;
+  --csi-surface: #F7F7F5;
+  --csi-ink: #15171A;
+  --csi-text: #2E3237;
+  --csi-muted: #60656B;
+  --csi-rule: #E3E3DE;
+  --csi-rule-strong: #CFCFC9;
+  /* Primary: turquoise (actions, links, status) */
+  --csi-turquoise: #0F7C7A;
+  --csi-turquoise-deep: #0B5F5D;
+  --csi-turquoise-tint: #E1F1F0;
+  --csi-on-turquoise: #FFFFFF;
+  /* Secondary: copper (rules, notes, highlights) */
+  --csi-copper: #8C4A2B;
+  --csi-copper-tint: #F6EEE9;
+  /* Secondary: desert rose (attention, errors, critical) */
+  --csi-rose: #B2426A;
+  --csi-rose-tint: #F8E9EE;
+
+  /* Type */
+  --csi-font: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --csi-mono: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
+  --csi-display: 700 48px/1.1 var(--csi-font);
+  --csi-h1: 700 34px/1.15 var(--csi-font);
+  --csi-h2: 700 24px/1.25 var(--csi-font);
+  --csi-h3: 700 19px/1.35 var(--csi-font);
+  --csi-body: 400 17px/1.6 var(--csi-font);
+  --csi-small: 400 14px/1.5 var(--csi-font);
+  --csi-label: 500 12px/1.4 var(--csi-mono);
+
+  /* Space (4px base) */
+  --csi-s1: 4px; --csi-s2: 8px; --csi-s3: 12px; --csi-s4: 16px;
+  --csi-s5: 24px; --csi-s6: 32px; --csi-s7: 48px; --csi-s8: 64px;
+
+  /* Shape: square corners, 1px rules, 4px brand bar */
+  --csi-radius: 0;
+  --csi-border: 1px solid var(--csi-rule);
+  --csi-bar: 4px;
+  --csi-measure: 68ch;
+  --csi-focus: 0 0 0 3px var(--csi-paper), 0 0 0 5px var(--csi-turquoise);
+}
+
+[data-theme="dark"], .csi-dark {
+  --csi-paper: #111315;
+  --csi-surface: #181B1E;
+  --csi-ink: #ECEDEE;
+  --csi-text: #C9CCD0;
+  --csi-muted: #979CA2;
+  --csi-rule: #2A2E33;
+  --csi-rule-strong: #3A3F45;
+  --csi-turquoise: #4CC3BC;
+  --csi-turquoise-deep: #7AD6D0;
+  --csi-turquoise-tint: #132726;
+  --csi-on-turquoise: #111315;
+  --csi-copper: #C98663;
+  --csi-copper-tint: #221A16;
+  --csi-rose: #E0668C;
+  --csi-rose-tint: #2A1820;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .csi-auto { color-scheme: dark; }
+}
+
+/* Base */
+.csi, .csi-page {
+  background: var(--csi-paper);
+  color: var(--csi-text);
+  font: var(--csi-body);
+  -webkit-font-smoothing: antialiased;
+}
+.csi *, .csi-page * { border-radius: 0; box-sizing: border-box; }
+.csi h1, .csi h2, .csi h3, .csi-page h1, .csi-page h2, .csi-page h3 { color: var(--csi-ink); margin: 0; text-wrap: balance; }
+.csi p, .csi-page p { margin: 0; max-width: var(--csi-measure); text-wrap: pretty; }
+.csi a, .csi-page a { color: var(--csi-turquoise); text-decoration: underline; text-underline-offset: 3px; }
+.csi a:hover, .csi-page a:hover { color: var(--csi-ink); }
+.csi :focus-visible, .csi-page :focus-visible { outline: none; box-shadow: var(--csi-focus); }
+.csi code, .csi-page code { font-family: var(--csi-mono); font-size: .9em; background: var(--csi-surface); padding: 1px 5px; }
+
+/* Type roles */
+.csi-display { font: var(--csi-display); letter-spacing: -.015em; color: var(--csi-ink); }
+.csi-h1 { font: var(--csi-h1); letter-spacing: -.01em; color: var(--csi-ink); }
+.csi-h2 { font: var(--csi-h2); color: var(--csi-ink); }
+.csi-h3 { font: var(--csi-h3); color: var(--csi-ink); }
+.csi-small { font: var(--csi-small); }
+.csi-muted { color: var(--csi-muted); }
+.csi-label { font: var(--csi-label); letter-spacing: .08em; text-transform: uppercase; color: var(--csi-muted); }
+.csi-label--accent { color: var(--csi-turquoise); }
+
+/* Brand bar (turquoise + copper) */
+.csi-bar { display: flex; height: 2px; width: 56px; }
+.csi-bar::before { content: ""; flex: 1; background: var(--csi-turquoise); }
+.csi-bar::after { content: ""; flex: 1; background: var(--csi-copper); }
+.csi-topbar { height: var(--csi-bar); background: var(--csi-turquoise); }
+
+/* Buttons */
+.csi-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; font: 700 15px/1 var(--csi-font); border: 1px solid transparent; cursor: pointer; text-decoration: none; }
+.csi-btn--primary { background: var(--csi-turquoise); color: var(--csi-on-turquoise); }
+.csi-btn--primary:hover { background: var(--csi-turquoise-deep); }
+.csi-btn--secondary { background: var(--csi-paper); color: var(--csi-ink); border-color: var(--csi-rule-strong); }
+.csi-btn--secondary:hover { border-color: var(--csi-ink); }
+.csi-btn--danger { background: var(--csi-rose); color: #FFFFFF; }
+
+/* Inputs */
+.csi-input { min-height: 44px; padding: 0 12px; font: var(--csi-body); color: var(--csi-ink); background: var(--csi-paper); border: 1px solid var(--csi-rule-strong); }
+.csi-input::placeholder { color: var(--csi-muted); }
+.csi-input:focus { border-color: var(--csi-turquoise); outline: none; box-shadow: var(--csi-focus); }
+
+/* Badges */
+.csi-badge { display: inline-block; font: 500 12px/1.5 var(--csi-font); padding: 2px 8px; }
+.csi-badge--ok { color: var(--csi-turquoise-deep); background: var(--csi-turquoise-tint); }
+.csi-badge--note { color: var(--csi-copper); background: var(--csi-copper-tint); }
+.csi-badge--alert { color: var(--csi-rose); background: var(--csi-rose-tint); }
+.csi-badge--neutral { color: var(--csi-muted); background: var(--csi-surface); }
+
+/* Callouts */
+.csi-callout { padding: 12px 16px; font: var(--csi-small); color: var(--csi-text); background: var(--csi-copper-tint); }
+.csi-callout strong { color: var(--csi-copper); }
+.csi-callout--alert { background: var(--csi-rose-tint); }
+.csi-callout--alert strong { color: var(--csi-rose); }
+
+/* Cards & tables */
+.csi-card { background: var(--csi-paper); border: var(--csi-border); padding: var(--csi-s5); }
+.csi-table { width: 100%; border-collapse: collapse; font: var(--csi-small); }
+.csi-table th { font: var(--csi-label); letter-spacing: .08em; text-transform: uppercase; color: var(--csi-muted); text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--csi-rule-strong); }
+.csi-table td { padding: 12px; border-bottom: var(--csi-border); color: var(--csi-text); }
+
+/* Monogram */
+.csi-mono-tile { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; background: var(--csi-ink); color: var(--csi-paper); font: 800 19px/1 var(--csi-font); letter-spacing: -.02em; }
+.csi-mono-tile::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #0F7C7A; }
