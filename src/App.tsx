@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { LoginGate } from './components/LoginGate'
+import { Menu } from './components/Menu'
 import { SessionPanel, type SessionProblem } from './components/SessionPanel'
 import { ApiError, apiGet, apiJson, apiUpload, relativeEdgeUrl } from './lib/api'
 import { contactDisplayName, groupContactsByInitial, sortContactsByName } from './shared/contacts'
@@ -18,6 +19,7 @@ function App() {
   const [authRequired, setAuthRequired] = useState(false)
   const [userEmail, setUserEmail] = useState('')
   const [accessMode, setAccessMode] = useState(false)
+  const [photoTab, setPhotoTab] = useState(false)
   const [passwordPanelOpen, setPasswordPanelOpen] = useState(false)
   const [accountPassword, setAccountPassword] = useState('')
   const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('')
@@ -35,6 +37,7 @@ function App() {
     const nextId = contact?.id || ''
     selectedIdRef.current = nextId
     setSelectedId(nextId)
+    setPhotoTab(false)
     setDraft(contact ? cloneContact(contact) : null)
   }, [])
 
@@ -49,7 +52,7 @@ function App() {
         setContacts(sortedContacts)
         setAuthRequired(false)
         const nextId = preferredId || selectedIdRef.current
-        selectContact(sortedContacts.find((contact) => contact.id === nextId) || sortedContacts[0] || null)
+        selectContact(sortedContacts.find((contact) => contact.id === nextId) || null)
         return sortedContacts
       } catch (err) {
         if (signedInRef.current && err instanceof ApiError && (err.kind === 'session-ended' || err.kind === 'denied')) {
@@ -304,7 +307,7 @@ function App() {
       await apiJson<{ deleted: boolean }>(`/api/contacts/${encodeURIComponent(draft.id)}`, 'DELETE')
       const next = sortContactsByName(contacts.filter((contact) => contact.id !== draft.id))
       setContacts(next)
-      selectContact(next[0] || null)
+      selectContact(null)
       setNotice('Deleted.')
     } catch (err) {
       fail(err)
@@ -344,6 +347,9 @@ function App() {
     window.location.href = path
   }
 
+  const view: 'loading' | 'empty' | 'list' | 'edit' =
+    contacts.length === 0 ? (loading ? 'loading' : 'empty') : draft ? 'edit' : 'list'
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main">
@@ -355,70 +361,60 @@ function App() {
         <div className="brand">
           <picture>
             <source srcSet="/brand/csi-monogram-dark.svg" media="(prefers-color-scheme: dark)" />
-            <img className="brand-mark" src="/brand/csi-monogram-light.svg" alt="" width="44" height="44" />
+            <img className="brand-mark" src="/brand/csi-monogram-light.svg" alt="" width="36" height="36" />
           </picture>
           <div className="brand-text">
             <span className="brand-org">Copper State Intelligence</span>
             <h1>CardCap</h1>
-            <p className="tagline">Business cards in. Follow-up CRM out.</p>
           </div>
         </div>
-        <div className="toolbar">
-          <div className="toolbar-group" role="group" aria-label="Capture">
-          <button className="btn primary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
-            Add cards
-          </button>
-          <input
-            ref={fileInput}
-            className="hidden-input"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            onChange={(event) => void handleFiles(event.currentTarget.files)}
-          />
-          <button className="btn" type="button" onClick={() => importInput.current?.click()} disabled={busy}>
-            Import
-          </button>
-          <input
-            ref={importInput}
-            className="hidden-input"
-            type="file"
-            accept=".csv,.vcf,.vcard,.json,text/csv,text/vcard,application/json"
-            onChange={(event) => void handleImport(event.currentTarget.files)}
-          />
+        {!authRequired && (
+          <div className="toolbar">
+            <button className="btn primary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
+              Add cards
+            </button>
+            <input
+              ref={fileInput}
+              className="hidden-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              onChange={(event) => void handleFiles(event.currentTarget.files)}
+            />
+            <button className="btn" type="button" onClick={() => importInput.current?.click()} disabled={busy}>
+              Import
+            </button>
+            <input
+              ref={importInput}
+              className="hidden-input"
+              type="file"
+              accept=".csv,.vcf,.vcard,.json,text/csv,text/vcard,application/json"
+              onChange={(event) => void handleImport(event.currentTarget.files)}
+            />
+            <Menu
+              label="Export"
+              items={[
+                { label: 'CSV', onSelect: () => exportUrl('/api/export.csv') },
+                { label: 'vCard', onSelect: () => exportUrl('/api/export.vcf') },
+                { label: 'JSON', onSelect: () => exportUrl('/api/export.json') },
+                { label: 'HTML', onSelect: () => exportUrl('/api/export.html') },
+                { label: 'iContact CSV', onSelect: () => exportUrl('/api/export.icontact.csv') },
+              ]}
+            />
+            {userEmail && (
+              <Menu
+                label="Account"
+                ariaLabel={`Account menu for ${userEmail}`}
+                items={[
+                  { heading: `Signed in as ${userEmail}` },
+                  ...(accessMode ? [] : [{ label: 'Set password', onSelect: () => setPasswordPanelOpen(true) }]),
+                  { label: 'Sign out', onSelect: () => void signOut() },
+                ]}
+              />
+            )}
           </div>
-          <div className="toolbar-group" role="group" aria-label="Export">
-          <button className="btn" type="button" onClick={() => exportUrl('/api/export.csv')}>
-            CSV
-          </button>
-          <button className="btn" type="button" onClick={() => exportUrl('/api/export.vcf')}>
-            vCard
-          </button>
-          <button className="btn" type="button" onClick={() => exportUrl('/api/export.json')}>
-            JSON
-          </button>
-          <button className="btn" type="button" onClick={() => exportUrl('/api/export.html')}>
-            HTML
-          </button>
-          <button className="btn" type="button" onClick={() => exportUrl('/api/export.icontact.csv')}>
-            iContact CSV
-          </button>
-          </div>
-          {userEmail && (
-            <div className="toolbar-group" role="group" aria-label="Account">
-              <span className="signed-in">Signed in as {userEmail}</span>
-              {!accessMode && (
-                <button className="btn" type="button" onClick={() => setPasswordPanelOpen(true)} title={userEmail}>
-                  Set password
-                </button>
-              )}
-              <button className="btn" type="button" onClick={() => void signOut()} title={userEmail}>
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
+        )}
       </header>
 
       {(notice || error) && (
@@ -486,200 +482,247 @@ function App() {
       {authRequired && <LoginGate onSignedIn={() => void handleSignedIn()} />}
 
       {!authRequired && (
-      <main className="workspace" id="main" tabIndex={-1}>
-        <aside className="sidebar">
-          <div className="filters">
-            <label>
-              Name Search
-              <input
-                type="search"
-                value={query}
-                placeholder="Search the main list"
-                onChange={(event) => setQuery(event.currentTarget.value)}
-              />
-            </label>
-            <label>
-              Status
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
-                <option value="">All contacts</option>
-                <option value="__review__">Review queue</option>
-                <option value="New">New</option>
-                <option value="Follow up">Follow up</option>
-                <option value="Active">Active</option>
-                <option value="Archived">Archived</option>
-              </select>
-            </label>
-          </div>
+        <main className={`workspace view-${view}${photoTab ? ' show-photo' : ''}`} id="main" tabIndex={-1}>
+          {view === 'loading' && <div className="empty">Loading contacts...</div>}
 
-          <div className="contact-list">
-            <div className="list-head">
-              <strong>Main List</strong>
-              <span>
-                {filteredContacts.length} shown
-                {reviewCount > 0 ? ` / ${reviewCount} review` : ''}
-              </span>
-            </div>
-            {loading && <div className="empty">Loading contacts...</div>}
-            {!loading && filteredContacts.length === 0 && (
-              <div className="empty">
-                <strong>No contacts yet.</strong>
-                <span>Tap Add Cards to take a photo or upload from Photos.</span>
+          {view === 'empty' && (
+            <section className="welcome" aria-labelledby="welcome-title">
+              <h2 id="welcome-title">Add your first business cards</h2>
+              <p>Take a photo or choose pictures of business cards. CardCap reads each one, you check it, and then you save it to your list.</p>
+              <ol className="welcome-steps">
+                <li>
+                  <strong>Add</strong>
+                  <span>Photos of cards</span>
+                </li>
+                <li>
+                  <strong>Review</strong>
+                  <span>Fix anything it missed</span>
+                </li>
+                <li>
+                  <strong>Export</strong>
+                  <span>CSV, vCard or iContact</span>
+                </li>
+              </ol>
+              <div className="welcome-actions">
+                <button className="btn primary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
+                  Add cards
+                </button>
+                <button className="btn" type="button" onClick={() => importInput.current?.click()} disabled={busy}>
+                  Import a file
+                </button>
               </div>
-            )}
-            {contactGroups.map((group) => (
-              <section className="contact-group" key={group.letter} aria-label={`${group.letter} contacts`}>
-                <div className="letter-row">{group.letter}</div>
-                {group.contacts.map((contact) => (
-                  <button
-                    className={`contact-row ${contact.id === selectedId ? 'active' : ''}`}
-                    key={contact.id}
-                    type="button"
-                    onClick={() => selectContact(contact)}
-                  >
-                    {contact.sourceImageUrl ? <img src={contact.sourceImageUrl} alt="" /> : <span className="avatar-fallback" />}
-                    <span>
-                      <strong>{contactDisplayName(contact)}</strong>
-                      <small>{[contact.company, contact.role].filter(Boolean).join(' - ') || contact.email || 'Needs review'}</small>
-                    </span>
-                  </button>
-                ))}
-              </section>
-            ))}
-          </div>
-        </aside>
-
-        <section className="editor">
-          {!draft && (
-            <div className="empty editor-empty">
-              <strong>Ready for your first batch.</strong>
-              <span>Upload business card photos and CardCap will create editable contact drafts.</span>
-            </div>
+            </section>
           )}
-          {draft && (
-            <>
-              <div className="editor-head">
-                <div>
-                  <h2>{draft.name || 'Review Contact'}</h2>
-                  <p>{[draft.company, draft.role].filter(Boolean).join(' - ') || 'Extracted card draft'}</p>
-                  {contactNeedsReview(draft) && <div className="review-chip">Needs review</div>}
-                  <div className="quick-links">
-                    {draft.email && <a href={`mailto:${draft.email}`}>Email</a>}
-                    {draft.phones[0] && <a href={`tel:${phoneHref(draft.phones[0])}`}>Call</a>}
-                    {draft.website && (
-                      <a href={draft.website} target="_blank" rel="noreferrer">
-                        Website
-                      </a>
-                    )}
-                    {draft.address && (
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(draft.address)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Map
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <span className="confidence">{Math.round(draft.extractionConfidence * 100)}%</span>
-              </div>
 
-              <div className="form-grid">
+          {(view === 'list' || view === 'edit') && (
+            <aside className="sidebar" aria-label="Contacts">
+              <div className="filters">
                 <label>
-                  Name
-                  <input value={draft.name} onChange={(event) => updateDraft('name', event.currentTarget.value)} />
+                  Search
+                  <input
+                    type="search"
+                    value={query}
+                    placeholder="Name, company, email"
+                    onChange={(event) => setQuery(event.currentTarget.value)}
+                  />
                 </label>
                 <label>
-                  Company
-                  <input value={draft.company} onChange={(event) => updateDraft('company', event.currentTarget.value)} />
-                </label>
-                <label>
-                  Role
-                  <input value={draft.role} onChange={(event) => updateDraft('role', event.currentTarget.value)} />
-                </label>
-                <label>
-                  Status
-                  <select
-                    value={draft.status}
-                    onChange={(event) => updateDraft('status', event.currentTarget.value as ContactStatus)}
-                  >
-                    <option>New</option>
-                    <option>Follow up</option>
-                    <option>Active</option>
-                    <option>Archived</option>
+                  Show
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
+                    <option value="">All contacts</option>
+                    <option value="__review__">Needs review</option>
+                    <option value="New">New</option>
+                    <option value="Follow up">Follow up</option>
+                    <option value="Active">Active</option>
+                    <option value="Archived">Archived</option>
                   </select>
                 </label>
-                <label>
-                  Email
-                  <input value={draft.email} onChange={(event) => updateDraft('email', event.currentTarget.value)} />
-                </label>
-                <label>
-                  Website
-                  <input value={draft.website} onChange={(event) => updateDraft('website', normalizeUrl(event.currentTarget.value))} />
-                </label>
-                <label>
-                  Phones
-                  <textarea
-                    value={draft.phones.join('\n')}
-                    onChange={(event) => updateDraft('phones', splitLines(event.currentTarget.value))}
-                  />
-                </label>
-                <label>
-                  Tags
-                  <textarea
-                    value={draft.tags.join('\n')}
-                    onChange={(event) => updateDraft('tags', splitLines(event.currentTarget.value))}
-                  />
-                </label>
-                <label className="wide">
-                  Address
-                  <input value={draft.address} onChange={(event) => updateDraft('address', event.currentTarget.value)} />
-                </label>
-                <label className="wide">
-                  Next step
-                  <input value={draft.nextStep} onChange={(event) => updateDraft('nextStep', event.currentTarget.value)} />
-                </label>
-                <label className="wide">
-                  Notes
-                  <textarea value={draft.notes} onChange={(event) => updateDraft('notes', event.currentTarget.value)} />
-                </label>
               </div>
 
-              <div className="actions">
-                <button className="btn primary" type="button" onClick={() => void saveDraft()} disabled={busy}>
-                  Save Contact
-                </button>
-                {contactNeedsReview(draft) && (
-                  <button className="btn" type="button" onClick={() => void markReviewed()} disabled={busy}>
-                    Mark Reviewed
-                  </button>
+              <div className="contact-list">
+                <div className="list-head">
+                  <strong>Contacts</strong>
+                  <span>
+                    {filteredContacts.length} shown
+                    {reviewCount > 0 ? `, ${reviewCount} to review` : ''}
+                  </span>
+                </div>
+                {filteredContacts.length === 0 && (
+                  <div className="empty">
+                    <strong>No contacts match.</strong>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => {
+                        setQuery('')
+                        setStatusFilter('')
+                      }}
+                    >
+                      Clear search
+                    </button>
+                  </div>
                 )}
-                <button className="btn danger" type="button" onClick={() => void deleteSelected()} disabled={busy}>
-                  Delete
-                </button>
+                {contactGroups.map((group) => (
+                  <section className="contact-group" key={group.letter} aria-label={`${group.letter} contacts`}>
+                    <div className="letter-row">{group.letter}</div>
+                    {group.contacts.map((contact) => (
+                      <button
+                        className={`contact-row ${contact.id === selectedId ? 'active' : ''}`}
+                        key={contact.id}
+                        type="button"
+                        aria-current={contact.id === selectedId ? 'true' : undefined}
+                        onClick={() => selectContact(contact)}
+                      >
+                        {contact.sourceImageUrl ? <img src={contact.sourceImageUrl} alt="" /> : <span className="avatar-fallback" />}
+                        <span className="contact-text">
+                          <strong>{contactDisplayName(contact)}</strong>
+                          <small>{[contact.company, contact.role].filter(Boolean).join(' - ') || contact.email || 'Needs review'}</small>
+                        </span>
+                        {contactNeedsReview(contact) && <span className="row-flag">Review</span>}
+                      </button>
+                    ))}
+                  </section>
+                ))}
               </div>
+            </aside>
+          )}
+
+          {view === 'edit' && draft && (
+            <>
+              <section className="editor" aria-label="Edit contact">
+                <div className="phone-bar">
+                  <button className="btn back-button" type="button" onClick={() => selectContact(null)}>
+                    All contacts
+                  </button>
+                  <div className="segmented" role="group" aria-label="Show">
+                    <button type="button" aria-pressed={!photoTab} onClick={() => setPhotoTab(false)}>
+                      Details
+                    </button>
+                    <button type="button" aria-pressed={photoTab} onClick={() => setPhotoTab(true)}>
+                      Card photo
+                    </button>
+                  </div>
+                </div>
+                <div className="editor-body">
+                  <div className="editor-head">
+                    <div>
+                      <h2>{draft.name || 'Review contact'}</h2>
+                      <p>{[draft.company, draft.role].filter(Boolean).join(' - ') || 'Extracted card draft'}</p>
+                      <div className="head-flags">
+                        {contactNeedsReview(draft) && <span className="review-chip">Needs review</span>}
+                        <span className="confidence" title="How sure CardCap is about what it read">
+                          {Math.round(draft.extractionConfidence * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="quick-links">
+                      {draft.email && <a href={`mailto:${draft.email}`}>Email</a>}
+                      {draft.phones[0] && <a href={`tel:${phoneHref(draft.phones[0])}`}>Call</a>}
+                      {draft.website && (
+                        <a href={draft.website} target="_blank" rel="noreferrer">
+                          Website
+                        </a>
+                      )}
+                      {draft.address && (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(draft.address)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Map
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="form-grid">
+                    <label>
+                      Name
+                      <input value={draft.name} onChange={(event) => updateDraft('name', event.currentTarget.value)} />
+                    </label>
+                    <label>
+                      Company
+                      <input value={draft.company} onChange={(event) => updateDraft('company', event.currentTarget.value)} />
+                    </label>
+                    <label>
+                      Role
+                      <input value={draft.role} onChange={(event) => updateDraft('role', event.currentTarget.value)} />
+                    </label>
+                    <label>
+                      Status
+                      <select value={draft.status} onChange={(event) => updateDraft('status', event.currentTarget.value as ContactStatus)}>
+                        <option>New</option>
+                        <option>Follow up</option>
+                        <option>Active</option>
+                        <option>Archived</option>
+                      </select>
+                    </label>
+                    <label>
+                      Email
+                      <input value={draft.email} onChange={(event) => updateDraft('email', event.currentTarget.value)} />
+                    </label>
+                    <label>
+                      Website
+                      <input value={draft.website} onChange={(event) => updateDraft('website', normalizeUrl(event.currentTarget.value))} />
+                    </label>
+                    <label>
+                      Phones
+                      <textarea value={draft.phones.join('\n')} onChange={(event) => updateDraft('phones', splitLines(event.currentTarget.value))} />
+                    </label>
+                    <label>
+                      Tags
+                      <textarea value={draft.tags.join('\n')} onChange={(event) => updateDraft('tags', splitLines(event.currentTarget.value))} />
+                    </label>
+                    <label className="wide">
+                      Address
+                      <input value={draft.address} onChange={(event) => updateDraft('address', event.currentTarget.value)} />
+                    </label>
+                    <label className="wide">
+                      Next step
+                      <input value={draft.nextStep} onChange={(event) => updateDraft('nextStep', event.currentTarget.value)} />
+                    </label>
+                    <label className="wide">
+                      Notes
+                      <textarea value={draft.notes} onChange={(event) => updateDraft('notes', event.currentTarget.value)} />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="actions">
+                  <button className="btn primary" type="button" onClick={() => void saveDraft()} disabled={busy}>
+                    Save contact
+                  </button>
+                  {contactNeedsReview(draft) && (
+                    <button className="btn" type="button" onClick={() => void markReviewed()} disabled={busy}>
+                      Mark reviewed
+                    </button>
+                  )}
+                  <button className="btn danger" type="button" onClick={() => void deleteSelected()} disabled={busy}>
+                    Delete
+                  </button>
+                </div>
+              </section>
+
+              <aside className="source-panel" aria-label="Card photo">
+                <div className="source-head">
+                  <h2>Card photo</h2>
+                  {draft.sourceImageUrl && (
+                    <a href={draft.sourceImageUrl} target="_blank" rel="noreferrer">
+                      Open full size
+                    </a>
+                  )}
+                </div>
+                <div className="source-body">
+                  {draft.sourceImageUrl ? (
+                    <img src={draft.sourceImageUrl} alt={`Business card for ${draft.name || 'contact'}`} />
+                  ) : (
+                    <div className="empty">This contact has no card photo.</div>
+                  )}
+                </div>
+              </aside>
             </>
           )}
-        </section>
-
-        <aside className="source-panel">
-          <div className="source-head">
-            <h2>Card Photo</h2>
-            {draft?.sourceImageUrl && (
-              <a href={draft.sourceImageUrl} target="_blank" rel="noreferrer">
-                Open
-              </a>
-            )}
-          </div>
-          <div className="source-body">
-            {draft?.sourceImageUrl ? (
-              <img src={draft.sourceImageUrl} alt={`Business card for ${draft.name || 'contact'}`} />
-            ) : (
-              <div className="empty">Source images appear here after upload.</div>
-            )}
-          </div>
-        </aside>
-      </main>
+        </main>
       )}
       </div>
       {sessionProblem && <SessionPanel problem={sessionProblem} onSignInAgain={signInAgain} onSignOut={() => void signOut()} />}
