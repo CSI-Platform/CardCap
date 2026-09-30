@@ -82,13 +82,45 @@ test('when the session ends the person is told, keeps their edits, signs in agai
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor-Lee')
 })
 
-test('sign out leaves through the Access logout address, and the app is closed again afterwards', async ({ page }) => {
+const SIGN_OUT_TITLE = 'Sign out of CardCap and Blackboard?'
+
+test('sign out asks first, naming Blackboard, then leaves through the Access logout address and the app is closed again', async ({ page }) => {
   await openApp(page, uniqueEmail('alice'))
   await chooseFromMenu(page, 'Account', 'Sign out')
+  const dialog = page.getByRole('alertdialog', { name: SIGN_OUT_TITLE })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('Blackboard')
+  await expect(dialog).toContainText('up to 30 seconds')
+  // The safe choice has focus; nothing has been signed out yet.
+  await expect(dialog.getByRole('button', { name: 'Stay signed in' })).toBeFocused()
+  await expect(page).not.toHaveURL(/\/cdn-cgi\/access\/logout/)
+  await dialog.getByRole('button', { name: 'Sign out', exact: true }).click()
   await expect(page).toHaveURL(/\/cdn-cgi\/access\/logout$/)
   await expect(page.getByRole('heading', { name: 'You are signed out' })).toBeVisible()
   await page.goto('/')
   await expect(page).toHaveURL(/\/sim-idp/)
+})
+
+test('staying signed in (button or Escape) keeps the session and puts focus back on the Account button', async ({ page }) => {
+  await openApp(page, uniqueEmail('alice'))
+  const account = page.getByRole('button', { name: /^Account menu/ })
+  for (const way of ['button', 'escape'] as const) {
+    await chooseFromMenu(page, 'Account', 'Sign out')
+    const dialog = page.getByRole('alertdialog', { name: SIGN_OUT_TITLE })
+    await expect(dialog).toBeVisible()
+    // Tab stays inside the dialog.
+    await page.keyboard.press('Tab')
+    await expect(dialog.getByRole('button', { name: 'Sign out', exact: true })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(dialog.getByRole('button', { name: 'Stay signed in' })).toBeFocused()
+    if (way === 'button') await dialog.getByRole('button', { name: 'Stay signed in' }).click()
+    else await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(account).toBeFocused()
+    await expect(page).not.toHaveURL(/\/cdn-cgi\/access\/logout/)
+  }
+  // Still signed in: the app works.
+  expect((await page.request.get('/api/me')).status()).toBe(200)
 })
 
 test('an account that needs review is refused with a clear message and a way out', async ({ page, request }) => {
@@ -101,8 +133,16 @@ test('an account that needs review is refused with a clear message and a way out
   await expect(dialog).toContainText('Account access requires review.')
   await expect(dialog.getByRole('link', { name: 'cody@copperstateit.com' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Sign out and use another account' })).toBeFocused()
-  // The way out works even though the Worker refuses this account: it goes to the Access logout address.
+  // The way out works even though the Worker refuses this account, and it asks first because it is the shared sign-out.
   await dialog.getByRole('button', { name: 'Sign out and use another account' }).click()
+  const confirm = page.getByRole('alertdialog', { name: SIGN_OUT_TITLE })
+  await expect(confirm).toBeVisible()
+  await expect(confirm).toContainText('Blackboard')
+  // Staying signed in goes back to the refusal message.
+  await confirm.getByRole('button', { name: 'Stay signed in' }).click()
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Sign out and use another account' }).click()
+  await confirm.getByRole('button', { name: 'Sign out', exact: true }).click()
   await expect(page).toHaveURL(/\/cdn-cgi\/access\/logout$/)
 })
 
@@ -149,5 +189,22 @@ test.describe('on a phone', () => {
         .map((e) => `${e.tagName}:${(e.innerText || e.className).slice(0, 24)}:${Math.round(e.getBoundingClientRect().height)}`),
     )
     expect(small).toEqual([])
+  })
+
+  test('the sign-out question fits on a phone with 44px buttons and no sideways scroll', async ({ page }) => {
+    await openApp(page, uniqueEmail('alice'))
+    await chooseFromMenu(page, 'Account', 'Sign out')
+    const dialog = page.getByRole('alertdialog', { name: SIGN_OUT_TITLE })
+    await expect(dialog).toBeVisible()
+    const box = (await dialog.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(375)
+    expect(box.y).toBeGreaterThanOrEqual(0)
+    expect(box.y + box.height).toBeLessThanOrEqual(812)
+    for (const name of ['Stay signed in', 'Sign out']) {
+      const button = (await dialog.getByRole('button', { name, exact: true }).boundingBox())!
+      expect(button.height, name).toBeGreaterThanOrEqual(44)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
   })
 })

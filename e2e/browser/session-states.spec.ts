@@ -108,6 +108,8 @@ test('sign out goes to the Access logout address the server returns', async ({ p
   )
   await page.route('**/cdn-cgi/access/logout', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>edge logout reached</h1>' }))
   await chooseFromMenu(page, 'Account', 'Sign out')
+  // The current sign-in only ends this app's session, so there is no shared-sign-out question here.
+  await expect(page.getByRole('alertdialog')).toHaveCount(0)
   await expect(page).toHaveURL(/\/cdn-cgi\/access\/logout$/)
   await expect(page.getByRole('heading', { name: 'edge logout reached' })).toBeVisible()
 })
