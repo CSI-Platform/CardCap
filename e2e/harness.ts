@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { build } from 'esbuild'
+import { ACCESS_AUDIENCE, ACCESS_HOSTS, ACCESS_ISSUER, JWKS_URL, defaultClaims, makeAccessKey, mintToken, type AccessKey, type MintOptions, type TokenClaims } from './access'
 import { PNG_BYTES } from './fixtures'
 import { FormData as MfFormData, Miniflare, Response as MfResponse } from 'miniflare'
 
@@ -22,7 +23,25 @@ export type OpenAiMode =
 
 export type TraceEntry = { at: string; kind: 'request' | 'outbound'; method: string; url: string; status?: number; body?: string; note?: string }
 
+export type HarnessOptions = {
+  /** Turn on the Cloudflare Access simulator (AUTH_MODE=access with a test issuer, audience, hosts and JWKS). */
+  access?: boolean
+}
+
+export type AccessSim = {
+  keys: AccessKey[]
+  jwksFetches: number
+  /** Replace the published key set (e.g. to simulate rotation or an unknown kid). */
+  publishKeys(keys: AccessKey[]): void
+  token(email: string, overrides?: { claims?: TokenClaims; mint?: Partial<MintOptions>; sub?: string }): string
+  /** Request as an Access-authenticated browser: signed JWT in both the header and the CF_Authorization cookie. */
+  session(email: string, opts?: { sub?: string; host?: string }): Session
+  /** Raw request with explicit credentials, for negative tests. */
+  raw(path: string, init?: RequestInit & { headers?: Record<string, string> }, host?: string): Promise<Response>
+}
+
 export type Harness = {
+  access: AccessSim
   mf: Miniflare
   openai: { mode: OpenAiMode; calls: number }
   trace: TraceEntry[]
@@ -41,7 +60,7 @@ export type Session = {
 
 export { PNG_BYTES }
 
-export async function startHarness(): Promise<Harness> {
+export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
   const root = process.env.CARDCAP_SRC ? resolve(process.env.CARDCAP_SRC) : resolve(here, '..')
   const outDir = mkdtempSync(join(tmpdir(), 'cardcap-e2e-'))
   const bundle = join(outDir, 'worker.mjs')
@@ -60,6 +79,8 @@ export async function startHarness(): Promise<Harness> {
   const trace: TraceEntry[] = []
   const openai = { mode: { kind: 'card', card: {} } as OpenAiMode, calls: 0 }
   const sentEmails: Array<{ to: string; text: string }> = []
+  const accessKey = makeAccessKey('test-key-1')
+  const access = { keys: [accessKey], published: [accessKey], jwksFetches: 0 }
 
   const mf = new Miniflare({
     modules: true,
@@ -76,6 +97,9 @@ export async function startHarness(): Promise<Harness> {
       OPENAI_MODEL: 'test-model',
       RESEND_API_KEY: 're_test_not_real',
       SENDER_EMAIL: 'test@example.invalid',
+      ...(options.access
+        ? { AUTH_MODE: 'access', ACCESS_ISSUER, ACCESS_AUDIENCE, ACCESS_ALLOWED_HOSTS: ACCESS_HOSTS.join(',') }
+        : {}),
     },
     outboundService: async (request: Request) => {
       const url = new URL(request.url)
@@ -85,6 +109,11 @@ export async function startHarness(): Promise<Harness> {
         sentEmails.push({ to: payload.to[0], text: payload.text })
         trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, status: 200, note: 'resend intercepted' })
         return MfResponse.json({ id: 'email-test' })
+      }
+      if (request.url === JWKS_URL) {
+        access.jwksFetches += 1
+        trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, status: 200, note: 'access jwks intercepted' })
+        return MfResponse.json({ keys: access.published.map((k) => k.jwk) })
       }
       if (url.hostname === OPENAI_HOST) {
         openai.calls += 1
@@ -103,10 +132,10 @@ export async function startHarness(): Promise<Harness> {
 
   const origin = 'https://cardcap.test'
 
-  async function send(cookie: string, path: string, init: RequestInit & { headers?: Record<string, string> } = {}): Promise<Response> {
+  async function send(cookie: string, path: string, init: RequestInit & { headers?: Record<string, string> } = {}, host?: string): Promise<Response> {
     const headers = new Headers(init.headers)
     if (cookie) headers.set('cookie', cookie)
-    const res = (await mf.dispatchFetch(`${origin}${path}`, { ...init, headers, redirect: 'manual' } as never)) as unknown as Response
+    const res = (await mf.dispatchFetch(`${host ? `https://${host}` : origin}${path}`, { ...init, headers, redirect: 'manual' } as never)) as unknown as Response
     let snippet = ''
     const type = res.headers.get('content-type') || ''
     if (/json|text/.test(type)) snippet = (await res.clone().text()).slice(0, 2000)
@@ -114,7 +143,29 @@ export async function startHarness(): Promise<Harness> {
     return res
   }
 
+  const accessSim: AccessSim = {
+    get keys() {
+      return access.keys
+    },
+    get jwksFetches() {
+      return access.jwksFetches
+    },
+    publishKeys(keys) {
+      access.published = keys
+    },
+    token(email, overrides = {}) {
+      return mintToken({ key: accessKey, ...overrides.mint, claims: { ...defaultClaims(email, overrides.sub), ...overrides.claims } })
+    },
+    session(email, opts = {}) {
+      const token = accessSim.token(email, { sub: opts.sub })
+      const cookie = `CF_Authorization=${token}`
+      return { email, cookie, request: (path, init) => send(cookie, path, { ...init, headers: { 'Cf-Access-Jwt-Assertion': token, ...init?.headers } }, opts.host) }
+    },
+    raw: (path, init, host) => send('', path, init, host),
+  }
+
   return {
+    access: accessSim,
     mf,
     openai,
     trace,
