@@ -63,18 +63,18 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   if (mode === 'access') {
     const identity = await accessIdentity(request, env)
     if (!identity) return json({ error: 'Sign in to continue.', loginUrl: '/cdn-cgi/access/login' }, 401)
+    if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
+      const response = logout()
+      return new Response(JSON.stringify({ logoutUrl: '/cdn-cgi/access/logout' }), {
+        headers: response.headers,
+      })
+    }
     accessUser = await resolveAccessUser(env.DB, identity)
     if (['/api/auth/request-link', '/api/auth/password-login', '/api/auth/verify', '/api/auth/set-password'].includes(url.pathname)) {
       return json({ error: 'Use Access to sign in.' }, 410)
     }
     if (request.method === 'GET' && url.pathname === '/api/auth/config') {
       return json({ mode: 'access', loginUrl: '/cdn-cgi/access/login', logoutUrl: '/cdn-cgi/access/logout' })
-    }
-    if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
-      const response = logout()
-      return new Response(JSON.stringify({ logoutUrl: '/cdn-cgi/access/logout' }), {
-        headers: response.headers,
-      })
     }
   }
   if (request.method === 'GET' && url.pathname === '/api/health') {

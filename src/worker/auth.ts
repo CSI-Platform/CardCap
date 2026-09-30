@@ -1,7 +1,7 @@
 import { envValue } from './config'
 import { sendLoginEmail } from './email'
 import { hashPassword, validatePassword, verifyPassword } from './password'
-import { consumeLoginToken, createLoginToken, getUserByEmail, setUserPasswordHash, upsertUser } from './repository'
+import { consumeLoginToken, createLoginToken, getUserByEmail, magicLinkUser, setUserPasswordHash } from './repository'
 import {
   createSessionCookieValue,
   sessionClearCookieHeader,
@@ -131,9 +131,9 @@ export async function verifyLogin(env: Env, url: URL): Promise<Response> {
   const email = await consumeLoginToken(env.DB, await sha256Hex(rawToken))
   if (!email) return expiredLinkPage()
 
-  const userId = `email:${email}`
-  await upsertUser(env.DB, userId, email, 'magic-link')
-  const cookie = await createSessionCookieValue(userId, secret)
+  const user = await magicLinkUser(env.DB, email)
+  if (!user) return expiredLinkPage()
+  const cookie = await createSessionCookieValue(user.id, secret)
   return new Response(null, {
     status: 302,
     headers: {

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { authenticationMode, resolveAccessUser } from '../src/worker/access'
+import { magicLinkUser } from '../src/worker/repository'
 
 function database() {
   const sqlite = new DatabaseSync(':memory:')
@@ -39,6 +40,19 @@ function database() {
 const identity = { issuer: 'https://test.cloudflareaccess.com', subject: 'google-subject', email: 'owner@example.invalid' }
 
 describe('Access account compatibility using real migrations', () => {
+  it('legacy login rejects duplicate normalized email owners without issuing an identity', async () => {
+    const { db, sqlite, user } = database()
+    user('one', 'owner@example.invalid'); user('two', ' Owner@Example.invalid ')
+    expect(await magicLinkUser(db, identity.email)).toBeNull()
+    expect(sqlite.prepare('SELECT count(*) AS count FROM users WHERE lower(trim(email)) = ?').get(identity.email)).toEqual({ count: 2 })
+  })
+
+  it('legacy login preserves an opaque owner ID and does not rewrite the account', async () => {
+    const { db, sqlite, user } = database()
+    user('opaque-owner', ' Owner@Example.invalid ')
+    expect(await magicLinkUser(db, identity.email)).toEqual({ id: 'opaque-owner', email: ' Owner@Example.invalid ' })
+    expect(sqlite.prepare("SELECT auth_provider,updated_at FROM users WHERE id = 'opaque-owner'").get()).toEqual({ auth_provider: 'local', updated_at: 'before' })
+  })
   it('preserves noncanonical ownership and credentials across Google and PIN identities', async () => {
     const { db, sqlite, user } = database()
     user('old-opaque-id', 'Owner@Example.invalid')
