@@ -59,8 +59,25 @@ it('email-link tokens still work exactly once after the change', async () => {
 
 it('many email links for one new person verified at the same moment still create exactly one account', async () => {
   onTestFailed((r) => saveTrace('legacy-concurrent-first-login', h.trace, r.errors?.[0]?.message))
-  const sessions = await Promise.all(Array.from({ length: 8 }, () => h.signIn('erin@example.test')))
-  const ids = await Promise.all(sessions.map(async (s) => ((await (await s.request('/api/me')).json()) as { id: string }).id))
+  const email = 'erin@example.test'
+  const links: string[] = []
+  for (let i = 0; i < 8; i += 1) {
+    const res = await h.anonymous().request('/api/auth/request-link', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    expect(res.status).toBe(200)
+    links.push(h.lastLoginLink(email)!)
+  }
+  expect(new Set(links).size).toBe(8)
+  // All eight links are opened at the same moment.
+  const verifies = await Promise.all(links.map((link) => h.anonymous().request(new URL(link).pathname + new URL(link).search)))
+  expect(verifies.map((r) => r.status)).toEqual(Array(8).fill(302))
+  const cookies = verifies.map((r) => (r.headers.get('set-cookie') || '').split(';')[0])
+  const ids = await Promise.all(
+    cookies.map(async (cookie) => ((await (await h.anonymous().request('/api/me', { headers: { Cookie: cookie } })).json()) as { id: string }).id),
+  )
   expect(new Set(ids)).toEqual(new Set(['email:erin@example.test']))
   const db = await h.mf.getD1Database('DB')
   const count = (await db.prepare("SELECT COUNT(*) AS n FROM users WHERE lower(trim(email)) = 'erin@example.test'").first<{ n: number }>())!.n
