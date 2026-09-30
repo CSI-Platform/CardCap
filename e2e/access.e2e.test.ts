@@ -285,6 +285,30 @@ describe('logout', () => {
   })
 })
 
+describe('a refused account can still sign out', () => {
+  scenario('with a valid token but an ambiguous account mapping, data is refused (403) yet logout answers with the Access logout URL', async () => {
+    await seedUser('dup-1', 'dana@example.test', 'Dana One')
+    await seedUser('dup-2', 'Dana@Example.test', 'Dana Two')
+    const dana = h.access.session('dana@example.test')
+    const data = await dana.request('/api/contacts')
+    expect(data.status).toBe(403)
+    expect(await data.json()).toEqual({ error: 'Account access requires review.' })
+    const out = await dana.request('/api/auth/logout', { method: 'POST' })
+    expect(out.status).toBe(200)
+    expect(await out.json()).toEqual({ logoutUrl: LOGOUT_URL })
+    expect(out.headers.get('set-cookie') || '').toMatch(/cardcap_session=;.*Max-Age=0/)
+  })
+
+  scenario('logout still requires a cryptographically valid token (a forged one gets nothing)', async () => {
+    const rogue = makeAccessKey('test-key-1')
+    const res = await h.access.raw('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Cf-Access-Jwt-Assertion': mintToken({ key: rogue, claims: defaultClaims('dana@example.test') }) },
+    })
+    expect(res.status).toBe(401)
+  })
+})
+
 describe('cross-user isolation with Access sign-in', () => {
   scenario('another Access user cannot list, read, edit, delete or fetch the image of a contact', async () => {
     const alice = h.access.session('alice@example.test')

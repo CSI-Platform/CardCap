@@ -1,11 +1,10 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { PNG_BUFFER } from '../fixtures'
 
-// Sign-in through a SIMULATED Cloudflare Access edge (see e2e/browser/server.ts, ACCESS_SIM=1, port 5198):
+// Sign-in through a SIMULATED Cloudflare Access edge (see e2e/browser/server.ts, ACCESS_SIM=1; the port comes from the Playwright project):
 // the Worker runs in AUTH_MODE=access, the edge redirects signed-out people to a fake sign-in page, and signed-in
 // requests carry a signed Access JWT. This shows how CardCap behaves behind Access; it is not live Access behavior.
-test.skip(process.env.ACCESS_SIM !== '1', 'needs the simulated Access server (ACCESS_SIM=1 on port 5198)')
-test.use({ baseURL: 'http://127.0.0.1:5198' })
+test.skip(process.env.ACCESS_SIM !== '1', 'needs the simulated Access server (ACCESS_SIM=1)')
 
 let counter = 0
 const uniqueEmail = (name: string) => `${name}-${Date.now()}-${++counter}@example.test`
@@ -32,12 +31,12 @@ test.beforeEach(async ({ request }) => {
   await request.get('/__test/openai?mode=card')
 })
 
-test('first visit goes through the edge, returns to the same address, and shows no CardCap sign-in or password screens', async ({ page }) => {
+test('first visit goes through the edge, returns to the same address, and shows no CardCap sign-in or password screens', async ({ page, baseURL }) => {
   const email = uniqueEmail('alice')
   await page.goto('/?from=bookmark')
   await expect(page).toHaveURL(/\/sim-idp\?return=/)
   await edgeSignIn(page, email)
-  await expect(page).toHaveURL('http://127.0.0.1:5198/?from=bookmark')
+  await expect(page).toHaveURL(new URL('/?from=bookmark', baseURL).toString())
   await expect(page.getByRole('button', { name: 'Add cards' })).toBeVisible()
   await expect(page.getByText(`Signed in as ${email}`)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Sign in to CardCap' })).toHaveCount(0)
@@ -102,21 +101,21 @@ test('an account that needs review is refused with a clear message and a way out
   await expect(page).toHaveURL(/\/cdn-cgi\/access\/logout$/)
 })
 
-async function person(browser: Browser, name: string) {
-  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:5198' })
+async function person(browser: Browser, baseURL: string | undefined, name: string) {
+  const context = await browser.newContext({ baseURL })
   const page = await context.newPage()
   await openApp(page, uniqueEmail(name))
   return { context, page }
 }
 
-test("another signed-in person cannot see, open the image of, or change someone else's contact", async ({ browser }) => {
-  const alice = await person(browser, 'alice')
+test("another signed-in person cannot see, open the image of, or change someone else's contact", async ({ browser, baseURL }) => {
+  const alice = await person(browser, baseURL, 'alice')
   await upload(alice.page)
   const imageUrl = (await alice.page.locator('.source-body img').getAttribute('src'))!
   const contacts = (await (await alice.page.request.get('/api/contacts')).json()) as { contacts: Array<{ id: string }> }
   const id = contacts.contacts[0].id
 
-  const bob = await person(browser, 'bob')
+  const bob = await person(browser, baseURL, 'bob')
   await expect(bob.page.getByText('No contacts yet.')).toBeVisible()
   expect((await bob.page.request.get(imageUrl)).status()).toBe(404)
   expect((await bob.page.request.get(`/api/contacts/${id}`)).status()).toBe(404)
