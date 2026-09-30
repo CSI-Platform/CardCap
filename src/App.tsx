@@ -488,7 +488,7 @@ function App() {
           {view === 'empty' && (
             <section className="welcome" aria-labelledby="welcome-title">
               <h2 id="welcome-title">Add your first business cards</h2>
-              <p>Take a photo or choose pictures of business cards. CardCap reads each one, you check it, and then you save it to your list.</p>
+              <p>Choose Add cards at the top to take a photo or pick pictures of business cards. CardCap reads each one, you check it, and then you save it to your list.</p>
               <ol className="welcome-steps">
                 <li>
                   <strong>Add</strong>
@@ -504,9 +504,6 @@ function App() {
                 </li>
               </ol>
               <div className="welcome-actions">
-                <button className="btn primary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
-                  Add cards
-                </button>
                 <button className="btn" type="button" onClick={() => importInput.current?.click()} disabled={busy}>
                   Import a file
                 </button>
@@ -573,7 +570,7 @@ function App() {
                         aria-current={contact.id === selectedId ? 'true' : undefined}
                         onClick={() => selectContact(contact)}
                       >
-                        {contact.sourceImageUrl ? <img src={contact.sourceImageUrl} alt="" /> : <span className="avatar-fallback" />}
+                        {contact.sourceImageUrl ? <img src={contact.sourceImageUrl} alt="" /> : <span className="avatar-fallback" aria-hidden="true">{contactDisplayName(contact).trim().charAt(0).toUpperCase()}</span>}
                         <span className="contact-text">
                           <strong>{contactDisplayName(contact)}</strong>
                           <small>{[contact.company, contact.role].filter(Boolean).join(' - ') || contact.email || 'Needs review'}</small>

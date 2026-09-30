@@ -213,8 +213,9 @@ html {
   right: 0;
   top: calc(100% + var(--csi-s1));
   z-index: 30;
+  width: max-content;
   min-width: 200px;
-  max-width: min(320px, calc(100vw - 32px));
+  max-width: min(360px, calc(100vw - 24px));
   padding: var(--csi-s1) 0;
   background: var(--csi-paper);
   border: 1px solid var(--csi-ink);
@@ -224,7 +225,8 @@ html {
   padding: var(--csi-s2) var(--csi-s4);
   color: var(--csi-muted);
   font: var(--csi-small);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: break-word;
   border-bottom: var(--csi-border);
   margin-bottom: var(--csi-s1);
 }
@@ -555,6 +557,13 @@ textarea:focus {
   background: var(--csi-surface);
 }
 
+.avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--csi-ink);
+  font: 700 16px/1 var(--csi-font);
+}
+
 .contact-text {
   min-width: 0;
 }
@@ -844,6 +853,7 @@ textarea:focus {
   }
 
   .topbar {
+    position: static;
     flex-direction: column;
     align-items: stretch;
     gap: var(--csi-s2);
@@ -853,6 +863,11 @@ textarea:focus {
   .toolbar {
     flex-wrap: nowrap;
     justify-content: stretch;
+    gap: 6px;
+  }
+
+  .toolbar .btn {
+    white-space: nowrap;
   }
 
   .toolbar > .btn.primary {
@@ -861,7 +876,8 @@ textarea:focus {
 
   .toolbar .menu-button,
   .toolbar > .btn:not(.primary) {
-    padding: 0 var(--csi-s3);
+    padding: 0 10px;
+    font-size: 13px;
   }
 
   .view-loading,

@@ -52,7 +52,10 @@ test('with no contacts there is one welcoming state and nothing else competing w
   // The next action is obvious: Add cards is the one primary button; Import is secondary.
   await expect(page.getByRole('banner').getByRole('button', { name: 'Add cards' })).toHaveClass(/primary/)
   await expect(page.getByRole('banner').getByRole('button', { name: 'Import' })).not.toHaveClass(/primary/)
-  await expect(page.locator('.btn.primary')).toHaveCount(2) // header + welcome
+  // Only one primary button on the whole screen: the header's Add cards. The welcome offers just the secondary Import.
+  await expect(page.locator('.btn.primary')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Add cards' })).toHaveCount(1)
+  await expect(page.locator('.welcome-actions .btn')).toHaveText(['Import a file'])
   await expect(page.getByRole('button', { name: 'Import a file' })).not.toHaveClass(/primary/)
 })
 
@@ -192,4 +195,25 @@ test.describe('on a phone: one task at a time', () => {
     expect(await small()).toEqual([])
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
   })
+})
+
+test('fonts are served from this site: no request goes to a font provider and the Atkinson faces load', async ({ page, request }) => {
+  const hosts = new Set<string>()
+  const fontFiles: Array<{ url: string; status: number }> = []
+  page.on('request', (req) => hosts.add(new URL(req.url()).host))
+  page.on('response', (res) => {
+    if (res.url().endsWith('.woff2')) fontFiles.push({ url: new URL(res.url()).pathname, status: res.status() })
+  })
+  await signIn(page, request)
+  await page.evaluate(() => document.fonts.ready)
+  expect([...hosts]).toEqual(['127.0.0.1:5199'])
+  expect(await page.evaluate(() => document.fonts.check('16px "Atkinson Hyperlegible Next"'))).toBe(true)
+  expect(await page.evaluate(() => document.fonts.check('12px "Atkinson Hyperlegible Mono"'))).toBe(true)
+  expect(fontFiles.length).toBeGreaterThan(0)
+  for (const file of fontFiles) {
+    expect(file.url).toMatch(/^\/fonts\/atkinson-.*\.woff2$/)
+    expect(file.status).toBe(200)
+  }
+  // The renderer really uses it (not the system fallback).
+  expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain('Atkinson Hyperlegible Next')
 })

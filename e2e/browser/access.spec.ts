@@ -19,7 +19,7 @@ async function edgeSignIn(page: Page, email: string) {
 async function openApp(page: Page, email: string, path = '/') {
   await page.goto(path)
   await edgeSignIn(page, email)
-  await expect(page.getByRole('banner').getByRole('button', { name: 'Add cards' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add cards' })).toBeVisible()
 }
 
 async function upload(page: Page) {
@@ -38,7 +38,7 @@ test('first visit goes through the edge, returns to the same address, and shows 
   await expect(page).toHaveURL(/\/sim-idp\?return=/)
   await edgeSignIn(page, email)
   await expect(page).toHaveURL(new URL('/?from=bookmark', baseURL).toString())
-  await expect(page.getByRole('banner').getByRole('button', { name: 'Add cards' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add cards' })).toBeVisible()
   await expectSignedInAs(page, email)
   await expect(page.getByRole('heading', { name: 'Sign in to CardCap' })).toHaveCount(0)
   await page.getByRole('button', { name: /^Account menu/ }).click()
