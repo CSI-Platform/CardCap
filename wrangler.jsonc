@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "cardcap",
+  "account_id": "584b3d4e1cb07efb65c315c7efcce589",
   "main": "./src/worker/index.ts",
   "compatibility_date": "2026-06-07",
   "compatibility_flags": ["nodejs_compat"],

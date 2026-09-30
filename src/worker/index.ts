@@ -10,13 +10,25 @@ import { findDuplicateContact, mergeDuplicateContact } from '../shared/duplicate
 import { parseContactsImport, type ImportedContact } from '../shared/importers'
 import { DAILY_EXTRACTION_LIMIT, utcDayStartIso } from '../shared/quota'
 import type { Contact, ContactStatus } from '../shared/types'
-import { allowed, authConfig, currentUser, logout, rateLimiter, requestLoginLink, verifyLogin } from './auth'
+import {
+  allowed,
+  authConfig,
+  currentUser,
+  logout,
+  passwordLogin,
+  rateLimiter,
+  requestLoginLink,
+  setAccountPassword,
+  verifyLogin,
+} from './auth'
 import { extractCard } from './extract'
 import {
+  ContactConflictError,
   countExtractionJobsSince,
   deleteContact,
   getContact,
   listContacts,
+  ownsImageKey,
   saveContact,
   saveExtractionJob,
 } from './repository'
@@ -35,8 +47,9 @@ export default {
       ctx.waitUntil(Promise.resolve())
       return response
     } catch (error) {
-      console.error(JSON.stringify({ level: 'error', message: String(error), path: url.pathname }))
-      return json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500)
+      if (error instanceof ContactConflictError) return json({ error: 'Contact id is not available' }, 409)
+      console.error(JSON.stringify({ level: 'error', errorType: error instanceof Error ? error.name : 'UnknownError', path: url.pathname }))
+      return json({ error: 'Unable to complete this request. Please try again.' }, 500)
     }
   },
 } satisfies ExportedHandler<Env>
@@ -52,6 +65,10 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (request.method === 'POST' && url.pathname === '/api/auth/request-link') {
     return requestLoginLink(request, env, url)
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/auth/password-login') {
+    return passwordLogin(request, env)
   }
 
   if (request.method === 'GET' && url.pathname === '/api/auth/verify') {
@@ -71,12 +88,20 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ email: user.email, id: user.id })
   }
 
+  if (request.method === 'POST' && url.pathname === '/api/auth/set-password') {
+    return setAccountPassword(request, env, user)
+  }
+
   if (request.method === 'GET' && url.pathname === '/api/contacts') {
     return json({ contacts: sortContactsByName(await listContacts(env.DB, user.id)) })
   }
 
   if (request.method === 'POST' && url.pathname === '/api/contacts') {
-    return json({ contact: await saveContact(env.DB, contactFromJson(await request.json()), user.id) }, 201)
+    const contact = contactFromJson(await request.json())
+    if (contact.sourceImageKey && !(await ownsImageKey(env.DB, user.id, contact.sourceImageKey))) {
+      return json({ error: 'Image not found' }, 404)
+    }
+    return json({ contact: await saveContact(env.DB, contact, user.id) }, 201)
   }
 
   const contactMatch = url.pathname.match(/^\/api\/contacts\/([^/]+)$/)
@@ -88,13 +113,19 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (request.method === 'PUT') {
       const existing = await getContact(env.DB, id, user.id)
-      const next = contactFromJson(await request.json(), existing || undefined, id)
+      if (!existing) return json({ error: 'Contact not found' }, 404)
+      const next = contactFromJson(await request.json(), existing, id)
+      if (next.sourceImageKey && !(await ownsImageKey(env.DB, user.id, next.sourceImageKey))) {
+        return json({ error: 'Image not found' }, 404)
+      }
       return json({ contact: await saveContact(env.DB, next, user.id) })
     }
     if (request.method === 'DELETE') {
       const existing = await getContact(env.DB, id, user.id)
+      if (!existing) return json({ deleted: false }, 404)
+      const ownedImage = existing?.sourceImageKey ? await ownsImageKey(env.DB, user.id, existing.sourceImageKey) : false
       const deleted = await deleteContact(env.DB, id, user.id)
-      if (deleted && existing?.sourceImageKey) {
+      if (deleted && existing?.sourceImageKey && ownedImage) {
         await env.CARD_IMAGES.delete(existing.sourceImageKey)
       }
       return json({ deleted })
@@ -111,7 +142,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
   const imageMatch = url.pathname.match(/^\/api\/images\/(.+)$/)
   if (request.method === 'GET' && imageMatch) {
-    return getImage(env, decodeURIComponent(imageMatch[1]))
+    return getImage(env, decodeURIComponent(imageMatch[1]), user.id)
   }
 
   if (request.method === 'GET' && url.pathname === '/api/export.csv') {
@@ -170,12 +201,18 @@ async function uploadCard(request: Request, env: Env, userId: string): Promise<R
     customMetadata: { originalName: file.name || 'card.jpeg' },
   })
 
-  const extraction = await extractCard({
-    fileName: file.name || 'card.jpeg',
-    bytes,
-    contentType: file.type || 'image/jpeg',
-    env,
-  })
+  let extraction: Awaited<ReturnType<typeof extractCard>>
+  try {
+    extraction = await extractCard({
+      fileName: file.name || 'card.jpeg',
+      bytes,
+      contentType: file.type || 'image/jpeg',
+      env,
+    })
+  } catch {
+    await env.CARD_IMAGES.delete(key)
+    return json({ error: 'Unable to extract this card. Please try again.' }, 502)
+  }
 
   const contact: Contact = {
     id,
@@ -274,14 +311,17 @@ async function importContacts(request: Request, env: Env, userId: string): Promi
   })
 }
 
-async function getImage(env: Env, key: string): Promise<Response> {
+async function getImage(env: Env, key: string, userId: string): Promise<Response> {
+  if (!(await ownsImageKey(env.DB, userId, key))) return new Response('Not found', { status: 404 })
   const object = await env.CARD_IMAGES.get(key)
   if (!object) return new Response('Not found', { status: 404 })
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)
   headers.set('etag', object.httpEtag)
-  headers.set('cache-control', 'private, max-age=3600')
+  headers.set('cache-control', 'private, no-store')
+  headers.set('x-content-type-options', 'nosniff')
+  headers.set('content-security-policy', "default-src 'none'; sandbox")
   return new Response(object.body, { headers })
 }
 

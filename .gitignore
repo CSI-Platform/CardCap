@@ -30,3 +30,7 @@ cardcap-live-cookie.tmp
 *.njsproj
 *.sln
 *.sw?
+
+.claude/
+test-results/
+playwright-report/

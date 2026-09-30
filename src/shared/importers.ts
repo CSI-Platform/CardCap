@@ -1,4 +1,5 @@
 import type { ContactStatus } from './types'
+import { normalizeContactTags, normalizeRealtorText } from './contact-normalization'
 
 export type ImportedContact = {
   name: string
@@ -174,15 +175,15 @@ function cleanContact(contact: ImportedContact): ImportedContact {
   return {
     ...contact,
     name: contact.name.trim(),
-    company: contact.company.trim(),
-    role: contact.role.trim(),
+    company: normalizeRealtorText(contact.company),
+    role: normalizeRealtorText(contact.role),
     email: contact.email.trim(),
     phones: unique(contact.phones.map((phone) => phone.trim()).filter(Boolean)),
     website: normalizeUrl(contact.website),
-    address: contact.address.trim(),
-    tags: unique(contact.tags.map((tag) => tag.trim()).filter(Boolean)),
-    notes: contact.notes.trim(),
-    nextStep: contact.nextStep.trim(),
+    address: normalizeRealtorText(contact.address),
+    tags: normalizeContactTags(contact.tags),
+    notes: normalizeRealtorText(contact.notes),
+    nextStep: normalizeRealtorText(contact.nextStep),
   }
 }
 
