@@ -56,3 +56,13 @@ it('email-link tokens still work exactly once after the change', async () => {
   const replay = await h.anonymous().request(new URL(link).pathname + new URL(link).search)
   expect(replay.status).toBe(410)
 })
+
+it('many email links for one new person verified at the same moment still create exactly one account', async () => {
+  onTestFailed((r) => saveTrace('legacy-concurrent-first-login', h.trace, r.errors?.[0]?.message))
+  const sessions = await Promise.all(Array.from({ length: 8 }, () => h.signIn('erin@example.test')))
+  const ids = await Promise.all(sessions.map(async (s) => ((await (await s.request('/api/me')).json()) as { id: string }).id))
+  expect(new Set(ids)).toEqual(new Set(['email:erin@example.test']))
+  const db = await h.mf.getD1Database('DB')
+  const count = (await db.prepare("SELECT COUNT(*) AS n FROM users WHERE lower(trim(email)) = 'erin@example.test'").first<{ n: number }>())!.n
+  expect(count).toBe(1)
+})
