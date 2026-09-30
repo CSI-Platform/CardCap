@@ -763,3 +763,19 @@ textarea:focus {
 .app-content[inert] {
   opacity: 0.4;
 }
+
+.signed-in {
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--csi-muted);
+  font: var(--csi-small);
+}
+
+@media (max-width: 760px) {
+  .signed-in {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}

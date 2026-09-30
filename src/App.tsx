@@ -17,6 +17,7 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [userEmail, setUserEmail] = useState('')
+  const [accessMode, setAccessMode] = useState(false)
   const [passwordPanelOpen, setPasswordPanelOpen] = useState(false)
   const [accountPassword, setAccountPassword] = useState('')
   const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('')
@@ -75,11 +76,19 @@ function App() {
         if (cancelled) return
         setUserEmail(me.email)
         signedInRef.current = true
+        // In Access mode the edge handles sign-in, so the password screens are not offered.
+        const config = await apiGet<{ mode?: string }>('/api/auth/config').catch(() => ({}) as { mode?: string })
+        if (!cancelled) setAccessMode(config.mode === 'access')
         const loaded = await loadContacts()
         if (loaded) restorePendingDraft(loaded)
-      } catch {
+      } catch (err) {
         if (cancelled) return
-        setAuthRequired(true)
+        if (err instanceof ApiError && err.kind === 'denied') {
+          // Signed in at the edge but refused by CardCap: explain it instead of offering a sign-in form.
+          reportSessionProblem(err)
+        } else {
+          setAuthRequired(true)
+        }
         setLoading(false)
       }
     }
@@ -87,6 +96,7 @@ function App() {
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadContacts])
 
   const filteredContacts = useMemo(() => {
@@ -120,7 +130,8 @@ function App() {
 
   function reportSessionProblem(err: ApiError) {
     if (err.kind === 'denied') {
-      setSessionProblem({ kind: 'denied', message: err.message, logoutUrl: err.logoutUrl })
+      // A 403 only comes from Access mode, where the edge logout path is the way out.
+      setSessionProblem({ kind: 'denied', message: err.message, logoutUrl: err.logoutUrl || '/cdn-cgi/access/logout' })
       return
     }
     const pending = draftRef.current
@@ -396,9 +407,12 @@ function App() {
           </div>
           {userEmail && (
             <div className="toolbar-group" role="group" aria-label="Account">
-              <button className="btn" type="button" onClick={() => setPasswordPanelOpen(true)} title={userEmail}>
-                Set password
-              </button>
+              <span className="signed-in">Signed in as {userEmail}</span>
+              {!accessMode && (
+                <button className="btn" type="button" onClick={() => setPasswordPanelOpen(true)} title={userEmail}>
+                  Set password
+                </button>
+              )}
               <button className="btn" type="button" onClick={() => void signOut()} title={userEmail}>
                 Sign out
               </button>
