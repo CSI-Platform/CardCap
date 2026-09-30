@@ -74,7 +74,7 @@ test('upload → review/edit → save → reload → export keeps exactly the co
   await expect(page.getByLabel('Role', { exact: true })).toHaveValue('Managing Broker')
   await expect(page.locator('.form-grid select')).toHaveValue('Active')
   await expect(page.getByText('Needs review')).toHaveCount(0)
-  const image = page.locator('img').first()
+  const image = page.locator('.source-body img')
   await expect(image).toBeVisible()
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => `${img.complete}:${img.naturalWidth}x${img.naturalHeight}`)).toBe(`true:${PNG_WIDTH}x${PNG_HEIGHT}`)
 
@@ -134,7 +134,7 @@ test("cross-user isolation: another user's browser session cannot see, read the 
   const alice = await newUser(browser, request, 'alice')
   await uploadCard(alice.page)
   await expect(alice.page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
-  const imageUrl = (await alice.page.locator('img').first().getAttribute('src'))!
+  const imageUrl = (await alice.page.locator('.source-body img').getAttribute('src'))!
   const contacts = (await (await alice.page.request.get('/api/contacts')).json()) as { contacts: Array<{ id: string }> }
   const aliceContactId = contacts.contacts[0].id
   expect((await alice.page.request.get(imageUrl)).status()).toBe(200)
