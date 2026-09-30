@@ -246,6 +246,8 @@ async function rawHttp(runtimeUrl: URL, path: string, init: RequestInit, headers
     body = Buffer.from(await encoded.arrayBuffer())
   } else if (typeof init.body === 'string') {
     body = Buffer.from(init.body)
+  } else if (init.body instanceof Uint8Array) {
+    body = Buffer.from(init.body)
   }
   headers.set('host', host)
   headers.set('connection', 'close')
