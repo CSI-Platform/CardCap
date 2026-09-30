@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { PNG_BUFFER } from '../fixtures'
+import { chooseFromMenu, expectSignedInAs, openContact, WELCOME_HEADING } from './helpers'
 
 // Sign-in through a SIMULATED Cloudflare Access edge (see e2e/browser/server.ts, ACCESS_SIM=1; the port comes from the Playwright project):
 // the Worker runs in AUTH_MODE=access, the edge redirects signed-out people to a fake sign-in page, and signed-in
@@ -18,7 +19,7 @@ async function edgeSignIn(page: Page, email: string) {
 async function openApp(page: Page, email: string, path = '/') {
   await page.goto(path)
   await edgeSignIn(page, email)
-  await expect(page.getByRole('button', { name: 'Add cards' })).toBeVisible()
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Add cards' })).toBeVisible()
 }
 
 async function upload(page: Page) {
@@ -37,10 +38,12 @@ test('first visit goes through the edge, returns to the same address, and shows 
   await expect(page).toHaveURL(/\/sim-idp\?return=/)
   await edgeSignIn(page, email)
   await expect(page).toHaveURL(new URL('/?from=bookmark', baseURL).toString())
-  await expect(page.getByRole('button', { name: 'Add cards' })).toBeVisible()
-  await expect(page.getByText(`Signed in as ${email}`)).toBeVisible()
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Add cards' })).toBeVisible()
+  await expectSignedInAs(page, email)
   await expect(page.getByRole('heading', { name: 'Sign in to CardCap' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Set password' })).toHaveCount(0)
+  await page.getByRole('button', { name: /^Account menu/ }).click()
+  await expect(page.getByRole('menuitem', { name: 'Set password' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible()
 })
 
 test('upload → review/edit → save → reload keeps the exact values behind Access', async ({ page }) => {
@@ -50,6 +53,7 @@ test('upload → review/edit → save → reload keeps the exact values behind A
   await page.getByRole('button', { name: 'Save Contact' }).click()
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible()
   await page.reload()
+  await openContact(page, 'Maria Okafor-Lee')
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor-Lee')
   await expect(page.locator('.source-body img')).toBeVisible()
 })
@@ -74,12 +78,13 @@ test('when the session ends the person is told, keeps their edits, signs in agai
   await page.getByRole('button', { name: 'Save Contact' }).click()
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible()
   await page.reload()
+  await openContact(page, 'Maria Okafor-Lee')
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor-Lee')
 })
 
 test('sign out leaves through the Access logout address, and the app is closed again afterwards', async ({ page }) => {
   await openApp(page, uniqueEmail('alice'))
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await chooseFromMenu(page, 'Account', 'Sign out')
   await expect(page).toHaveURL(/\/cdn-cgi\/access\/logout$/)
   await expect(page.getByRole('heading', { name: 'You are signed out' })).toBeVisible()
   await page.goto('/')
@@ -116,13 +121,14 @@ test("another signed-in person cannot see, open the image of, or change someone 
   const id = contacts.contacts[0].id
 
   const bob = await person(browser, baseURL, 'bob')
-  await expect(bob.page.getByText('No contacts yet.')).toBeVisible()
+  await expect(bob.page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
   expect((await bob.page.request.get(imageUrl)).status()).toBe(404)
   expect((await bob.page.request.get(`/api/contacts/${id}`)).status()).toBe(404)
   expect((await bob.page.request.put(`/api/contacts/${id}`, { data: { name: 'Hijacked' } })).status()).toBe(404)
   expect((await bob.page.request.delete(`/api/contacts/${id}`)).status()).toBe(404)
 
   await alice.page.reload()
+  await openContact(alice.page, 'Maria Okafor')
   await expect(alice.page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
   await alice.context.close()
   await bob.context.close()
@@ -135,7 +141,7 @@ test.describe('on a phone', () => {
     const email = uniqueEmail('alice')
     await openApp(page, email)
     await upload(page)
-    await expect(page.getByText(`Signed in as ${email}`)).toBeVisible()
+    await expectSignedInAs(page, email)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
     const small = await page.evaluate(() =>
       [...document.querySelectorAll<HTMLElement>('button, a.btn, input:not([type=file]), select, textarea, .contact-row')]

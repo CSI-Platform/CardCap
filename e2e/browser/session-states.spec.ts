@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { PNG_BUFFER } from '../fixtures'
+import { chooseFromMenu } from './helpers'
 
 // What a person sees when their sign-in ends, is refused, or the network drops.
 // These are SIMULATED: the server's answers are replaced with the responses Cloudflare Access and the Worker are
@@ -15,7 +16,7 @@ async function signIn(page: Page, request: APIRequestContext, email: string) {
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click()
   await expect.poll(async () => (await request.get(`/__test/login-link?email=${encodeURIComponent(email)}`)).status()).toBe(200)
   await page.goto(await (await request.get(`/__test/login-link?email=${encodeURIComponent(email)}`)).text())
-  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Account menu/ })).toBeVisible()
 }
 
 async function withContact(page: Page, request: APIRequestContext) {
@@ -106,7 +107,7 @@ test('sign out goes to the Access logout address the server returns', async ({ p
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, logoutUrl: '/cdn-cgi/access/logout' }) }),
   )
   await page.route('**/cdn-cgi/access/logout', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>edge logout reached</h1>' }))
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await chooseFromMenu(page, 'Account', 'Sign out')
   await expect(page).toHaveURL(/\/cdn-cgi\/access\/logout$/)
   await expect(page.getByRole('heading', { name: 'edge logout reached' })).toBeVisible()
 })
@@ -114,9 +115,15 @@ test('sign out goes to the Access logout address the server returns', async ({ p
 test('a logout address that is not a same-site Access path is never followed', async ({ page, request }) => {
   await withContact(page, request)
   await page.route('**/api/auth/logout', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, logoutUrl: 'https://evil.example/logout' }) }),
+    // Like the real logout, this also clears the session cookie, so the sign-in screen is not skipped by an old session.
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'set-cookie': 'cardcap_session=; Path=/; Max-Age=0' },
+      body: JSON.stringify({ ok: true, logoutUrl: 'https://evil.example/logout' }),
+    }),
   )
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await chooseFromMenu(page, 'Account', 'Sign out')
   await expect(page).toHaveURL('http://127.0.0.1:5199/')
   await expect(page.getByRole('heading', { name: 'Sign in to CardCap' })).toBeVisible()
 })

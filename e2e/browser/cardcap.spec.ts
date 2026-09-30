@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 import { PNG_BUFFER, PNG_HEIGHT, PNG_WIDTH } from '../fixtures'
+import { chooseFromMenu, openContact, WELCOME_HEADING } from './helpers'
 
 // Real Chromium against the built SPA + the real Worker on local Miniflare (see e2e/browser/server.ts).
 // OpenAI/Resend are intercepted by the server; data is synthetic.
@@ -19,7 +20,7 @@ async function signIn(page: Page, request: APIRequestContext, email: string) {
   const link = await (await request.get(`/__test/login-link?email=${encodeURIComponent(email)}`)).text()
   await page.goto(link)
   await expect(page.getByRole('button', { name: 'Add Cards' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Account menu/ })).toBeVisible()
 }
 
 async function uploadCard(page: Page, name = 'maria-card.png') {
@@ -30,8 +31,8 @@ async function r2Keys(request: APIRequestContext): Promise<string[]> {
   return (await request.get('/__test/r2')).json()
 }
 
-async function downloadText(page: Page, buttonName: string): Promise<{ text: string; filename: string }> {
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: buttonName, exact: true }).click()])
+async function downloadText(page: Page, itemName: string): Promise<{ text: string; filename: string }> {
+  const [download] = await Promise.all([page.waitForEvent('download'), chooseFromMenu(page, 'Export', itemName)])
   return { text: readFileSync(await download.path(), 'utf8'), filename: download.suggestedFilename() }
 }
 
@@ -45,7 +46,7 @@ test('upload → review/edit → save → reload → export keeps exactly the co
 
   // Draft from the card, flagged for review.
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
-  await expect(page.getByText('Needs review').first()).toBeVisible()
+  await expect(page.locator('.review-chip')).toBeVisible()
   await expect(page.getByLabel('Company', { exact: true })).toHaveValue('Sunrise Realty Group')
 
   // Review/edit like a person: fix name and role, set status, and use the explicit Save Contact button first.
@@ -54,26 +55,28 @@ test('upload → review/edit → save → reload → export keeps exactly the co
   await page.locator('.form-grid select').selectOption('Active')
   await page.getByRole('button', { name: 'Save Contact' }).click()
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible()
-  await expect(page.getByText('Needs review').first()).toBeVisible() // saving alone does not clear the review flag
+  await expect(page.locator('.review-chip')).toBeVisible() // saving alone does not clear the review flag
 
   // Reload after Save Contact: values persisted on the server, still flagged for review.
   await page.reload()
+  await openContact(page, 'Maria Okafor-Lee')
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor-Lee')
   await expect(page.getByLabel('Role', { exact: true })).toHaveValue('Managing Broker')
   await expect(page.locator('.form-grid select')).toHaveValue('Active')
-  await expect(page.getByText('Needs review').first()).toBeVisible()
+  await expect(page.locator('.review-chip')).toBeVisible()
 
   // Then mark reviewed, which clears the flag.
   await page.getByRole('button', { name: 'Mark Reviewed' }).click()
   await expect(page.getByText('Marked reviewed.', { exact: true })).toBeVisible()
-  await expect(page.getByText('Needs review')).toHaveCount(0)
+  await expect(page.locator('.review-chip')).toHaveCount(0)
 
   // Reload: same values come back from the server, not from client memory; the real image renders.
   await page.reload()
+  await openContact(page, 'Maria Okafor-Lee')
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor-Lee')
   await expect(page.getByLabel('Role', { exact: true })).toHaveValue('Managing Broker')
   await expect(page.locator('.form-grid select')).toHaveValue('Active')
-  await expect(page.getByText('Needs review')).toHaveCount(0)
+  await expect(page.locator('.review-chip')).toHaveCount(0)
   const image = page.locator('.source-body img')
   await expect(image).toBeVisible()
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => `${img.complete}:${img.naturalWidth}x${img.naturalHeight}`)).toBe(`true:${PNG_WIDTH}x${PNG_HEIGHT}`)
@@ -103,7 +106,7 @@ test('a failed extraction shows a safe message, leaves nothing behind, and a ret
   await expect(banner).not.toContainText(UPSTREAM_SECRET)
   await expect(banner).not.toContainText('OpenAI')
   expect(await r2Keys(request)).toEqual(r2Before)
-  await expect(page.getByText('No contacts yet.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
 
   await request.get('/__test/openai?mode=card')
   await uploadCard(page)
@@ -140,7 +143,7 @@ test("cross-user isolation: another user's browser session cannot see, read the 
   expect((await alice.page.request.get(imageUrl)).status()).toBe(200)
 
   const bob = await newUser(browser, request, 'bob')
-  await expect(bob.page.getByText('No contacts yet.')).toBeVisible()
+  await expect(bob.page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
   await expect(bob.page.getByText('Maria Okafor')).toHaveCount(0)
   expect((await bob.page.request.get(imageUrl)).status()).toBe(404)
   expect((await bob.page.request.get(`/api/contacts/${aliceContactId}`)).status()).toBe(404)
@@ -151,6 +154,7 @@ test("cross-user isolation: another user's browser session cannot see, read the 
 
   // Alice is untouched and still sees her image.
   await alice.page.reload()
+  await openContact(alice.page, 'Maria Okafor')
   await expect(alice.page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
   expect((await alice.page.request.get(imageUrl)).status()).toBe(200)
   await alice.context.close()
@@ -163,7 +167,7 @@ test('password: set it in the account panel, sign out, then sign in with email a
   await uploadCard(page)
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
 
-  await page.getByRole('button', { name: 'Set password' }).click()
+  await chooseFromMenu(page, 'Account', 'Set password')
   await page.getByLabel('New password').fill('correct horse battery')
   await page.getByLabel('Confirm password').fill('different password')
   await page.getByRole('button', { name: 'Save password' }).click()
@@ -173,7 +177,7 @@ test('password: set it in the account panel, sign out, then sign in with email a
   await page.getByRole('button', { name: 'Save password' }).click()
   await expect(page.getByText('Password saved.')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await chooseFromMenu(page, 'Account', 'Sign out')
   await expect(page.getByRole('heading', { name: 'Sign in to CardCap' })).toBeVisible()
 
   await page.getByPlaceholder('you@company.com').fill(email)
@@ -183,9 +187,11 @@ test('password: set it in the account panel, sign out, then sign in with email a
 
   await page.getByLabel('Password', { exact: true }).fill('correct horse battery')
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await openContact(page, 'Maria Okafor')
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
 
   // The session survives a reload.
   await page.reload()
+  await openContact(page, 'Maria Okafor')
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
 })
