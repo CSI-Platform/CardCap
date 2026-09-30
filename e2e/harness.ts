@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
@@ -99,6 +99,7 @@ export async function startHarness(): Promise<Harness> {
     },
   })
   await mf.ready
+  await applyMigrations(mf, root)
 
   const origin = 'https://cardcap.test'
 
@@ -163,4 +164,18 @@ export function uploadForm(fileName: string, type = 'image/png', bytes: Uint8Arr
 
 export function emptyForm(): FormData {
   return new MfFormData() as unknown as FormData
+}
+
+// Build the test database the way production is built: apply migrations/*.sql in order (not the Worker's runtime ensureSchema).
+// D1 enforces the foreign keys these migrations declare, so ordering bugs surface here like they would in production.
+async function applyMigrations(mf: Miniflare, root: string): Promise<void> {
+  const dir = join(root, 'migrations')
+  const db = await mf.getD1Database('DB')
+  const files = readdirSync(dir).filter((f) => /^\d+.*\.sql$/.test(f)).sort()
+  if (files.length === 0) throw new Error(`no migrations found in ${dir}`)
+  for (const file of files) {
+    const sql = readFileSync(join(dir, file), 'utf8').replace(/--.*$/gm, '')
+    const statements = sql.split(/;\s*(?:\r?\n|$)/).map((stmt) => stmt.trim()).filter(Boolean)
+    await db.batch(statements.map((stmt) => db.prepare(stmt)))
+  }
 }
