@@ -3,6 +3,7 @@ import './App.css'
 import { LoginGate } from './components/LoginGate'
 import { Menu } from './components/Menu'
 import { SessionPanel, type SessionProblem } from './components/SessionPanel'
+import { SignOutConfirm } from './components/SignOutConfirm'
 import { ApiError, apiGet, apiJson, apiUpload, relativeEdgeUrl } from './lib/api'
 import { contactDisplayName, groupContactsByInitial, sortContactsByName } from './shared/contacts'
 import { contactNeedsReview, reviewedContact } from './shared/review'
@@ -20,6 +21,7 @@ function App() {
   const [userEmail, setUserEmail] = useState('')
   const [accessMode, setAccessMode] = useState(false)
   const [photoTab, setPhotoTab] = useState(false)
+  const [confirmSignOut, setConfirmSignOut] = useState(false)
   const [passwordPanelOpen, setPasswordPanelOpen] = useState(false)
   const [accountPassword, setAccountPassword] = useState('')
   const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('')
@@ -235,7 +237,20 @@ function App() {
     await loadContacts()
   }
 
+  // In Access mode signing out ends the shared CSI sign-in (Blackboard too), so ask first; the old sign-in only ends this app's session.
+  function askSignOut() {
+    if (accessMode || sessionProblem?.kind === 'denied') setConfirmSignOut(true)
+    else void signOut()
+  }
+
+  function cancelSignOut() {
+    setConfirmSignOut(false)
+    // Put focus back on the Account button (when that is where the person came from).
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-label^="Account menu"]')?.focus())
+  }
+
   async function signOut() {
+    setConfirmSignOut(false)
     const result = await apiJson<{ ok: boolean; logoutUrl?: string }>('/api/auth/logout', 'POST').catch(() => undefined)
     const logoutUrl = relativeEdgeUrl(result?.logoutUrl) || (sessionProblem?.kind === 'denied' ? relativeEdgeUrl(sessionProblem.logoutUrl) : undefined)
     if (logoutUrl) {
@@ -409,7 +424,7 @@ function App() {
                 items={[
                   { heading: `Signed in as ${userEmail}` },
                   ...(accessMode ? [] : [{ label: 'Set password', onSelect: () => setPasswordPanelOpen(true) }]),
-                  { label: 'Sign out', onSelect: () => void signOut() },
+                  { label: 'Sign out', onSelect: askSignOut },
                 ]}
               />
             )}
@@ -722,7 +737,8 @@ function App() {
         </main>
       )}
       </div>
-      {sessionProblem && <SessionPanel problem={sessionProblem} onSignInAgain={signInAgain} onSignOut={() => void signOut()} />}
+      {confirmSignOut && <SignOutConfirm onConfirm={() => void signOut()} onCancel={cancelSignOut} />}
+      {sessionProblem && !confirmSignOut && <SessionPanel problem={sessionProblem} onSignInAgain={signInAgain} onSignOut={askSignOut} />}
     </div>
   )
 }
