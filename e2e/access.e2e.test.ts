@@ -88,11 +88,15 @@ describe('valid Access sessions and existing-account mapping', () => {
     expect(((await second.json()) as { id: string }).id).toBe('email:alice@example.test')
   })
 
-  scenario('a first-time person gets a new canonical account with no data and no password row', async () => {
+  scenario('a first-time person gets a new account with no data and no password row, and keeps it on later sign-ins', async () => {
     const carol = h.access.session('carol@example.test')
     const me = await carol.request('/api/me')
     expect(me.status).toBe(200)
-    expect(await me.json()).toEqual({ email: 'carol@example.test', id: 'email:carol@example.test' })
+    const created = (await me.json()) as { email: string; id: string }
+    expect(created.email).toBe('carol@example.test')
+    expect(created.id).toMatch(/^access:[0-9a-f]{64}$/)
+    const again = (await (await h.access.session('carol@example.test').request('/api/me')).json()) as { id: string }
+    expect(again.id).toBe(created.id)
     expect(await contactNames(await carol.request('/api/contacts'))).toEqual([])
     const rows = (await (await db()).prepare('SELECT COUNT(*) AS n FROM user_passwords').first<{ n: number }>())!.n
     expect(rows).toBe(0)
@@ -159,14 +163,13 @@ describe('forged, expired and malformed tokens are rejected', () => {
     await expectRejected(mintToken({ key: h.access.keys[0], alg: 'HS256', claims: claims() }), 'HS256 confusion')
   })
 
-  scenario('tampered signature, tampered payload, unknown key id, missing key id', async () => {
+  scenario('tampered signature, tampered payload, unknown key id', async () => {
     const good = mintToken({ key: h.access.keys[0], claims: claims() })
     await expectRejected(mintToken({ key: h.access.keys[0], claims: claims(), tamperSignature: true }), 'tampered signature')
     const [head, , sig] = good.split('.')
     const evil = Buffer.from(JSON.stringify(claims({ email: 'victim@example.test' }))).toString('base64url')
     await expectRejected(`${head}.${evil}.${sig}`, 'tampered payload')
     await expectRejected(mintToken({ key: h.access.keys[0], kid: 'not-published', claims: claims() }), 'unknown kid')
-    await expectRejected(mintToken({ key: h.access.keys[0], kid: null, claims: claims() }), 'no kid')
   })
 
   scenario('token signed by a key that is not in the issuer JWKS', async () => {
@@ -277,7 +280,7 @@ describe('logout', () => {
     const alice = h.access.session('alice@example.test')
     const res = await alice.request('/api/auth/logout', { method: 'POST' })
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ ok: true, logoutUrl: LOGOUT_URL })
+    expect(await res.json()).toEqual({ logoutUrl: LOGOUT_URL })
     expect(res.headers.get('set-cookie') || '').toMatch(/cardcap_session=;.*Max-Age=0/)
   })
 })

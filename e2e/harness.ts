@@ -1,3 +1,4 @@
+import { request as httpRequest } from 'node:http'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -127,7 +128,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
       return new MfResponse('blocked by e2e harness', { status: 599 })
     },
   })
-  await mf.ready
+  const runtimeUrl = await mf.ready
   await applyMigrations(mf, root)
 
   const origin = 'https://cardcap.test'
@@ -135,7 +136,9 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   async function send(cookie: string, path: string, init: RequestInit & { headers?: Record<string, string> } = {}, host?: string): Promise<Response> {
     const headers = new Headers(init.headers)
     if (cookie) headers.set('cookie', cookie)
-    const res = (await mf.dispatchFetch(`${host ? `https://${host}` : origin}${path}`, { ...init, headers, redirect: 'manual' } as never)) as unknown as Response
+    const res = options.access
+      ? await rawHttp(runtimeUrl, path, init, headers, host || 'cardcap.test')
+      : ((await mf.dispatchFetch(`${host ? `https://${host}` : origin}${path}`, { ...init, headers, redirect: 'manual' } as never)) as unknown as Response)
     let snippet = ''
     const type = res.headers.get('content-type') || ''
     if (/json|text/.test(type)) snippet = (await res.clone().text()).slice(0, 2000)
@@ -229,4 +232,48 @@ async function applyMigrations(mf: Miniflare, root: string): Promise<void> {
     const statements = sql.split(/;\s*(?:\r?\n|$)/).map((stmt) => stmt.trim()).filter(Boolean)
     await db.batch(statements.map((stmt) => db.prepare(stmt)))
   }
+}
+
+// Miniflare's dispatchFetch keeps the requested URL but sends its own local address as the Host header, which a Worker
+// that (rightly) compares the two would refuse. For Access tests we talk to the runtime over plain HTTP instead, with the
+// Host header we choose, exactly as the Cloudflare edge would deliver it. An absolute request target lets a test send a
+// Host header that disagrees with the URL.
+async function rawHttp(runtimeUrl: URL, path: string, init: RequestInit, headers: Headers, host: string): Promise<Response> {
+  let body: Buffer | undefined
+  if (init.body instanceof MfFormData) {
+    const encoded = new MfResponse(init.body as never)
+    headers.set('content-type', encoded.headers.get('content-type') || '')
+    body = Buffer.from(await encoded.arrayBuffer())
+  } else if (typeof init.body === 'string') {
+    body = Buffer.from(init.body)
+  }
+  headers.set('host', host)
+  headers.set('connection', 'close')
+  if (body) headers.set('content-length', String(body.length))
+  const outgoing: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    outgoing[key] = value
+  })
+  return new Promise((resolvePromise, reject) => {
+    const req = httpRequest(
+      { hostname: runtimeUrl.hostname, port: runtimeUrl.port, path, method: init.method || 'GET', headers: outgoing, agent: false },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => chunks.push(chunk))
+        res.on('end', () => {
+          const responseHeaders = new Headers()
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (Array.isArray(value)) value.forEach((v) => responseHeaders.append(key, v))
+            else if (value !== undefined) responseHeaders.set(key, value)
+          }
+          const status = res.statusCode || 0
+          const nullBody = status === 204 || status === 304
+          resolvePromise(new Response(nullBody ? null : Buffer.concat(chunks), { status, headers: responseHeaders }))
+        })
+      },
+    )
+    req.on('error', reject)
+    if (body) req.write(body)
+    req.end()
+  })
 }
