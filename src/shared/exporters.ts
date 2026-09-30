@@ -1,4 +1,5 @@
 import type { Contact } from './types'
+import { normalizeContactTextFields } from './contact-normalization'
 
 const CSV_HEADERS = [
   'name',
@@ -48,8 +49,9 @@ function vcardText(value: string): string {
 }
 
 export function exportContactsCsv(contacts: Contact[]): string {
-  const rows = contacts.map((contact) =>
-    [
+  const rows = contacts.map((inputContact) => {
+    const contact = normalizeContactTextFields(inputContact)
+    return [
       contact.name,
       contact.company,
       contact.role,
@@ -63,18 +65,19 @@ export function exportContactsCsv(contacts: Contact[]): string {
       contact.notes,
     ]
       .map((value) => (typeof value === 'string' && value.startsWith('"') && value.endsWith('"') ? value : csvCell(value)))
-      .join(','),
-  )
+      .join(',')
+  })
   return [CSV_HEADERS.join(','), ...rows].join('\n')
 }
 
 export function exportContactsJson(contacts: Contact[]): string {
-  return JSON.stringify(contacts, null, 2)
+  return JSON.stringify(contacts.map((contact) => normalizeContactTextFields(contact)), null, 2)
 }
 
 export function exportContactsVcard(contacts: Contact[]): string {
   return contacts
-    .map((contact) => {
+    .map((inputContact) => {
+      const contact = normalizeContactTextFields(inputContact)
       const lines = [
         'BEGIN:VCARD',
         'VERSION:3.0',
@@ -108,7 +111,8 @@ export function splitContactName(name: string): { firstName: string; lastName: s
 }
 
 export function exportContactsIContactCsv(contacts: Contact[]): string {
-  const rows = contacts.map((contact) => {
+  const rows = contacts.map((inputContact) => {
+    const contact = normalizeContactTextFields(inputContact)
     const { firstName, lastName } = splitContactName(contact.name)
     const extraPhones = contact.phones.slice(1)
     const notes = [contact.notes, extraPhones.length ? `Other phones: ${extraPhones.join('; ')}` : '']
@@ -135,7 +139,8 @@ export function exportContactsIContactCsv(contacts: Contact[]): string {
 
 export function exportContactsHtml(contacts: Contact[]): string {
   const cards = contacts
-    .map((contact) => {
+    .map((inputContact) => {
+      const contact = normalizeContactTextFields(inputContact)
       const phone = contact.phones[0] || ''
       const mapHref = contact.address
         ? `https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(contact.address)}`

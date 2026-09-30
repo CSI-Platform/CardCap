@@ -16,6 +16,9 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [userEmail, setUserEmail] = useState('')
+  const [passwordPanelOpen, setPasswordPanelOpen] = useState(false)
+  const [accountPassword, setAccountPassword] = useState('')
+  const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const fileInput = useRef<HTMLInputElement | null>(null)
@@ -170,8 +173,31 @@ function App() {
     await apiJson<{ ok: boolean }>('/api/auth/logout', 'POST').catch(() => undefined)
     setUserEmail('')
     setContacts([])
+    setPasswordPanelOpen(false)
+    setAccountPassword('')
+    setAccountPasswordConfirm('')
     selectContact(null)
     setAuthRequired(true)
+  }
+
+  async function saveAccountPassword() {
+    if (accountPassword !== accountPasswordConfirm) {
+      setError('Passwords do not match.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await apiJson<{ ok: boolean }>('/api/auth/set-password', 'POST', { password: accountPassword })
+      setPasswordPanelOpen(false)
+      setAccountPassword('')
+      setAccountPasswordConfirm('')
+      setNotice('Password saved.')
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function saveDraft() {
@@ -292,14 +318,75 @@ function App() {
             iContact CSV
           </button>
           {userEmail && (
-            <button className="btn" type="button" onClick={() => void signOut()} title={userEmail}>
-              Sign out
-            </button>
+            <>
+              <button className="btn" type="button" onClick={() => setPasswordPanelOpen(true)} title={userEmail}>
+                Set password
+              </button>
+              <button className="btn" type="button" onClick={() => void signOut()} title={userEmail}>
+                Sign out
+              </button>
+            </>
           )}
         </div>
       </header>
 
       {(notice || error) && <div className={error ? 'banner error' : 'banner'}>{error || notice}</div>}
+
+      {passwordPanelOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setPasswordPanelOpen(false)}>
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="password-panel-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h2 id="password-panel-title">Account Password</h2>
+                <p>{userEmail}</p>
+              </div>
+              <button className="btn" type="button" onClick={() => setPasswordPanelOpen(false)} disabled={busy}>
+                Close
+              </button>
+            </div>
+            <label>
+              New password
+              <input
+                type="password"
+                value={accountPassword}
+                autoComplete="new-password"
+                onChange={(event) => setAccountPassword(event.currentTarget.value)}
+              />
+            </label>
+            <label>
+              Confirm password
+              <input
+                type="password"
+                value={accountPasswordConfirm}
+                autoComplete="new-password"
+                onChange={(event) => setAccountPasswordConfirm(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void saveAccountPassword()
+                }}
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                className="btn primary"
+                type="button"
+                onClick={() => void saveAccountPassword()}
+                disabled={busy || !accountPassword || !accountPasswordConfirm}
+              >
+                Save password
+              </button>
+              <button className="btn" type="button" onClick={() => setPasswordPanelOpen(false)} disabled={busy}>
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {authRequired && <LoginGate onSignedIn={() => void handleSignedIn()} />}
 

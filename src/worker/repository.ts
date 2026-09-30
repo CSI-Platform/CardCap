@@ -1,4 +1,5 @@
 import type { Contact, ContactStatus } from '../shared/types'
+import { normalizeContactTextFields } from '../shared/contact-normalization'
 
 const LOCAL_USER_ID = 'local-user'
 
@@ -27,6 +28,12 @@ type TableInfoRow = {
   name: string
 }
 
+export type UserAuth = {
+  id: string
+  email: string
+  passwordHash: string
+}
+
 export type ContactWrite = Omit<Contact, 'sourceImageUrl'>
 
 export async function ensureSchema(db: D1Database): Promise<void> {
@@ -40,6 +47,14 @@ export async function ensureSchema(db: D1Database): Promise<void> {
           auth_provider TEXT NOT NULL DEFAULT 'local',
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
+        )`,
+      ),
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS user_passwords (
+          user_id TEXT PRIMARY KEY,
+          password_hash TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id)
         )`,
       ),
       db.prepare(
@@ -130,10 +145,27 @@ export async function getContact(db: D1Database, id: string, userId = LOCAL_USER
   return row ? rowToContact(row) : null
 }
 
+export class ContactConflictError extends Error {
+  constructor() {
+    super('Contact id is not available')
+    this.name = 'ContactConflictError'
+  }
+}
+
+export async function ownsImageKey(db: D1Database, userId: string, key: string): Promise<boolean> {
+  await ensureSchema(db)
+  const row = await db
+    .prepare('SELECT 1 AS found FROM extraction_jobs WHERE user_id = ? AND source_image_key = ? LIMIT 1')
+    .bind(userId, key)
+    .first<{ found: number }>()
+  return Boolean(row)
+}
+
 export async function saveContact(db: D1Database, contact: ContactWrite, userId = LOCAL_USER_ID): Promise<Contact> {
   await ensureSchema(db)
   await ensureUser(db, userId)
-  await db
+  const normalizedContact = normalizeContactTextFields(contact)
+  const result = await db
     .prepare(
       `INSERT INTO contacts (
         id, user_id, name, company, role, email, phones_json, website, address,
@@ -155,30 +187,32 @@ export async function saveContact(db: D1Database, contact: ContactWrite, userId 
         source_image_key = excluded.source_image_key,
         extraction_confidence = excluded.extraction_confidence,
         needs_review = excluded.needs_review,
-        updated_at = excluded.updated_at`,
+        updated_at = excluded.updated_at
+      WHERE contacts.user_id = excluded.user_id`,
     )
     .bind(
-      contact.id,
+      normalizedContact.id,
       userId,
-      contact.name,
-      contact.company,
-      contact.role,
-      contact.email,
-      JSON.stringify(contact.phones),
-      contact.website,
-      contact.address,
-      JSON.stringify(contact.tags),
-      contact.notes,
-      contact.nextStep,
-      contact.status,
-      contact.sourceImageKey,
-      contact.extractionConfidence,
-      contact.needsReview ? 1 : 0,
-      contact.createdAt,
-      contact.updatedAt,
+      normalizedContact.name,
+      normalizedContact.company,
+      normalizedContact.role,
+      normalizedContact.email,
+      JSON.stringify(normalizedContact.phones),
+      normalizedContact.website,
+      normalizedContact.address,
+      JSON.stringify(normalizedContact.tags),
+      normalizedContact.notes,
+      normalizedContact.nextStep,
+      normalizedContact.status,
+      normalizedContact.sourceImageKey,
+      normalizedContact.extractionConfidence,
+      normalizedContact.needsReview ? 1 : 0,
+      normalizedContact.createdAt,
+      normalizedContact.updatedAt,
     )
     .run()
-  return { ...contact, sourceImageUrl: imageUrl(contact.sourceImageKey) }
+  if (result.meta.changes === 0) throw new ContactConflictError()
+  return { ...normalizedContact, sourceImageUrl: imageUrl(normalizedContact.sourceImageKey) }
 }
 
 export async function deleteContact(db: D1Database, id: string, userId = LOCAL_USER_ID): Promise<boolean> {
@@ -228,7 +262,7 @@ export async function saveExtractionJob(
 }
 
 export function rowToContact(row: ContactRow): Contact {
-  return {
+  return normalizeContactTextFields({
     id: row.id,
     name: row.name,
     company: row.company,
@@ -247,7 +281,7 @@ export function rowToContact(row: ContactRow): Contact {
     needsReview: Boolean(row.needs_review),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  }
+  })
 }
 
 async function addColumnIfMissing(db: D1Database, tableName: string, columnName: string, definition: string): Promise<void> {
@@ -275,6 +309,39 @@ async function ensureUser(
     .run()
 }
 
+export async function getUserByEmail(db: D1Database, email: string): Promise<UserAuth | null> {
+  await ensureSchema(db)
+  const row = await db
+    .prepare(
+      `SELECT users.id, users.email, COALESCE(user_passwords.password_hash, '') AS password_hash
+       FROM users
+       LEFT JOIN user_passwords ON user_passwords.user_id = users.id
+       WHERE lower(users.email) = lower(?)
+       LIMIT 1`,
+    )
+    .bind(email)
+    .first<{ id: string; email: string; password_hash: string }>()
+  return row ? { id: row.id, email: row.email, passwordHash: row.password_hash } : null
+}
+
+export async function setUserPasswordHash(db: D1Database, userId: string, passwordHash: string, email?: string): Promise<void> {
+  await ensureSchema(db)
+  const now = new Date().toISOString()
+  await ensureUser(db, userId, email || emailFromUserId(userId) || `${userId}@cardcap.local`, email || userId, 'password', now)
+  await db.batch([
+    db.prepare('UPDATE users SET auth_provider = ?, updated_at = ? WHERE id = ?').bind('password', now, userId),
+    db
+      .prepare(
+        `INSERT INTO user_passwords (user_id, password_hash, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET
+           password_hash = excluded.password_hash,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(userId, passwordHash, now),
+  ])
+}
+
 function readJsonArray(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown
@@ -297,6 +364,10 @@ export async function upsertUser(db: D1Database, userId: string, email: string, 
   await ensureSchema(db)
   const now = new Date().toISOString()
   await ensureUser(db, userId, email, email, authProvider, now)
+}
+
+function emailFromUserId(userId: string): string {
+  return userId.startsWith('email:') ? userId.slice('email:'.length) : ''
 }
 
 export async function countExtractionJobsSince(db: D1Database, userId: string, sinceIso: string): Promise<number> {

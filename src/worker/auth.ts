@@ -1,6 +1,7 @@
 import { envValue } from './config'
 import { sendLoginEmail } from './email'
-import { consumeLoginToken, createLoginToken, localUserId, upsertUser } from './repository'
+import { hashPassword, validatePassword, verifyPassword } from './password'
+import { consumeLoginToken, createLoginToken, getUserByEmail, setUserPasswordHash, upsertUser } from './repository'
 import {
   createSessionCookieValue,
   sessionClearCookieHeader,
@@ -16,26 +17,21 @@ export type CurrentUser = {
 
 type RateLimiter = { limit(options: { key: string }): Promise<{ success: boolean }> }
 
+const DUMMY_PASSWORD_HASH = 'pbkdf2-sha256$100000$AAECAwQFBgcICQoLDA0ODw$yE52fSYE8F1KRwSGPxGtoexmPPJ-zYRWxZMDIEJ2CQY'
+
 const TOKEN_TTL_MS = 15 * 60 * 1000
 
 export async function currentUser(request: Request, env: Env): Promise<CurrentUser | null> {
   const secret = envValue(env, 'SESSION_SECRET')
-  if (secret) {
-    const cookieValue = sessionCookieFromHeader(request.headers.get('Cookie') || '')
-    if (cookieValue) {
-      const userId = await verifySessionCookieValue(decodeURIComponent(cookieValue), secret)
-      if (userId) return { id: userId, email: emailFromUserId(userId) }
-    }
+  if (!secret) return null
+  const cookieValue = sessionCookieFromHeader(request.headers.get('Cookie') || '')
+  if (!cookieValue) return null
+  try {
+    const userId = await verifySessionCookieValue(decodeURIComponent(cookieValue), secret)
+    return userId ? { id: userId, email: emailFromUserId(userId) } : null
+  } catch {
+    return null
   }
-
-  const accessUser = cloudflareAccessUser(request)
-  if (accessUser) return accessUser
-
-  if (!secret) {
-    return { id: localUserId(), email: 'local@cardcap.dev' }
-  }
-
-  return null
 }
 
 export async function requestLoginLink(request: Request, env: Env, url: URL): Promise<Response> {
@@ -45,6 +41,10 @@ export async function requestLoginLink(request: Request, env: Env, url: URL): Pr
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return Response.json({ error: 'Enter a valid email address.' }, { status: 400 })
+  }
+
+  if (!envValue(env, 'SESSION_SECRET')) {
+    return Response.json({ error: 'Sign-in is not configured.' }, { status: 503 })
   }
 
   const ip = request.headers.get('CF-Connecting-IP') || ''
@@ -65,11 +65,62 @@ export async function requestLoginLink(request: Request, env: Env, url: URL): Pr
   const link = `${url.origin}/api/auth/verify?token=${rawToken}`
   try {
     await sendLoginEmail(env, email, link)
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : 'Email failed' }, { status: 502 })
+  } catch {
+    return Response.json({ error: 'Unable to send a sign-in link. Please try again.' }, { status: 502 })
   }
 
   return Response.json({ ok: true })
+}
+
+export async function passwordLogin(request: Request, env: Env): Promise<Response> {
+  const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : ''
+  const password = typeof payload.password === 'string' ? payload.password : ''
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password) {
+    return Response.json({ error: 'Enter your email and password.' }, { status: 400 })
+  }
+
+  const secret = envValue(env, 'SESSION_SECRET')
+  if (!secret) {
+    return Response.json({ error: 'Password login is not configured.' }, { status: 503 })
+  }
+
+  const ip = request.headers.get('CF-Connecting-IP') || ''
+  const emailAllowed = await allowed(rateLimiter(env, 'RL_PASSWORD_EMAIL'), `${ip || 'unknown'}:${email}`)
+  const ipAllowed = await allowed(rateLimiter(env, 'RL_PASSWORD_IP'), ip || 'unknown')
+  if (!emailAllowed || !ipAllowed) {
+    return Response.json({ error: 'Too many requests — wait a minute.' }, { status: 429 })
+  }
+
+  const user = await getUserByEmail(env.DB, email)
+  const passwordMatches = await verifyPassword(password, user?.passwordHash || DUMMY_PASSWORD_HASH)
+  if (!user?.passwordHash || !passwordMatches) {
+    return invalidPasswordResponse()
+  }
+
+  const cookie = await createSessionCookieValue(user.id, secret)
+  return Response.json(
+    { ok: true, email: user.email },
+    {
+      headers: {
+        'set-cookie': sessionSetCookieHeader(encodeURIComponent(cookie)),
+        'cache-control': 'no-store',
+      },
+    },
+  )
+}
+
+export async function setAccountPassword(request: Request, env: Env, user: CurrentUser): Promise<Response> {
+  const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  const password = typeof payload.password === 'string' ? payload.password : ''
+  const validationError = validatePassword(password)
+  if (validationError) {
+    return Response.json({ error: validationError }, { status: 400 })
+  }
+
+  await setUserPasswordHash(env.DB, user.id, await hashPassword(password), user.email)
+  return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store' } })
 }
 
 export async function verifyLogin(env: Env, url: URL): Promise<Response> {
@@ -131,43 +182,6 @@ function emailFromUserId(userId: string): string {
   return userId.startsWith('email:') ? userId.slice('email:'.length) : ''
 }
 
-function cloudflareAccessUser(request: Request): CurrentUser | null {
-  const emailHeader = request.headers.get('Cf-Access-Authenticated-User-Email')
-  if (emailHeader) {
-    const email = emailHeader.trim().toLowerCase()
-    return { id: `email:${email}`, email }
-  }
-
-  const jwt = request.headers.get('Cf-Access-Jwt-Assertion') || authorizationCookie(request)
-  const payload = jwt ? decodeJwtPayload(jwt) : null
-  const email = typeof payload?.email === 'string' ? payload.email.trim().toLowerCase() : ''
-  const sub = typeof payload?.sub === 'string' ? payload.sub.trim() : ''
-
-  if (sub || email) {
-    return { id: sub ? `access:${sub}` : `email:${email}`, email }
-  }
-
-  return null
-}
-
-function authorizationCookie(request: Request): string {
-  const cookie = request.headers.get('Cookie') || ''
-  const match = cookie.match(/(?:^|;\s*)CF_Authorization=([^;]+)/)
-  return match ? decodeURIComponent(match[1]) : ''
-}
-
-function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
-  const payload = jwt.split('.')[1]
-  if (!payload) return null
-  try {
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-    return JSON.parse(atob(padded)) as Record<string, unknown>
-  } catch {
-    return null
-  }
-}
-
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`cardcap:${input}`))
   return Array.from(new Uint8Array(digest))
@@ -182,4 +196,8 @@ function expiredLinkPage(): Response {
 <body><main><h1>That link expired or was already used</h1><p>Sign-in links work once and expire after 15 minutes.</p><p><a href="/">Request a new link</a></p></main></body></html>`,
     { status: 410, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } },
   )
+}
+
+function invalidPasswordResponse(): Response {
+  return Response.json({ error: 'Invalid email or password.' }, { status: 401, headers: { 'cache-control': 'no-store' } })
 }

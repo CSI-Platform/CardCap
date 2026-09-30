@@ -72,6 +72,27 @@ describe('contact exports', () => {
     expect(html).toContain('https://www.gailsellsaz.com')
     expect(html).toContain('https://www.google.com/maps/search/?api=1&amp;query=')
   })
+
+  it('normalizes realtor trademark and OCR artifacts in exports', () => {
+    const dirtyContact = iContactFixture({
+      company: 'National Association of REALTORS\u00ae',
+      role: 'REALTOR\u00aeA',
+      tags: ['Graduate REALTOR\u00ae Institute', 'Realtor\u00ae'],
+      notes: 'Member, REALTOR \u00ae',
+    })
+
+    const csv = exportContactsCsv([dirtyContact])
+    const iContactCsv = exportContactsIContactCsv([dirtyContact])
+    const html = exportContactsHtml([dirtyContact])
+
+    expect(csv).toContain('National Association of Realtors,Realtor')
+    expect(csv).toContain('"Graduate Realtor Institute; Realtor"')
+    expect(csv).toContain('Member, Realtor')
+    expect(iContactCsv).toContain('National Association of Realtors,Realtor')
+    expect(html).toContain('<p>National Association of Realtors - Realtor</p>')
+    expect([csv, iContactCsv, html].join('\n')).not.toContain('\u00ae')
+    expect([csv, iContactCsv, html].join('\n')).not.toContain('REALTORA')
+  })
 })
 
 function iContactFixture(overrides: Partial<Contact> = {}): Contact {

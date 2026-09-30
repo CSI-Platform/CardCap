@@ -6,7 +6,7 @@ describe('normalizeExtraction', () => {
     const draft = normalizeExtraction({
       name: ' Felicia Mandell-Snell ',
       company: 'Long Realty',
-      role: 'REALTOR',
+      role: 'Realtor',
       emails: [' fmandell@msn.com '],
       phones: ['(480) 695-1296', ''],
       website: 'www.feliciamandell.com',
@@ -20,7 +20,7 @@ describe('normalizeExtraction', () => {
     expect(draft).toEqual({
       name: 'Felicia Mandell-Snell',
       company: 'Long Realty',
-      role: 'REALTOR',
+      role: 'Realtor',
       email: 'fmandell@msn.com',
       phones: ['(480) 695-1296'],
       website: 'https://www.feliciamandell.com',
@@ -80,5 +80,20 @@ describe('normalizeExtraction', () => {
 
     expect(draft.name).toBe('Sharon Carsteus')
     expect(draft.company).toBe('PRESENT PROPERTIES')
+  })
+
+  it('normalizes realtor trademark and OCR artifacts in extracted text', () => {
+    const draft = normalizeExtraction({
+      name: 'Gail Robertson',
+      company: 'WestUSA Realty',
+      role: 'REALTOR\u00aeA',
+      tags: ['Graduate REALTOR\u00ae Institute', 'Realtor\u00ae'],
+      notes: 'Member, REALTOR \u00ae',
+      confidence: 0.93,
+    })
+
+    expect(draft.role).toBe('Realtor')
+    expect(draft.tags).toEqual(['Graduate Realtor Institute', 'Realtor'])
+    expect(draft.notes).toBe('Member, Realtor')
   })
 })

@@ -129,8 +129,7 @@ async function openAiExtract(options: ExtractOptions): Promise<ExtractionResult>
   })
 
   if (!response.ok) {
-    const message = await response.text()
-    throw new Error(`OpenAI extraction failed: ${response.status} ${message}`)
+    throw new Error('Card extraction service failed')
   }
 
   const payload = (await response.json()) as {

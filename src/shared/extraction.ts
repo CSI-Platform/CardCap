@@ -1,4 +1,5 @@
 import type { ContactDraft, ExtractionResult } from './types'
+import { normalizeContactTags, normalizeRealtorText } from './contact-normalization'
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -28,10 +29,10 @@ function confidence(value: unknown): number {
 
 export function normalizeExtraction(input: ExtractionResult): ContactDraft {
   const score = confidence(input.confidence)
-  const tags = textArray(input.tags)
+  const tags = normalizeContactTags(textArray(input.tags))
   const rawName = text(input.name)
-  const rawCompany = text(input.company)
-  const role = text(input.role)
+  const rawCompany = normalizeRealtorText(text(input.company))
+  const role = normalizeRealtorText(text(input.role))
   const promotedName = !rawName && looksLikePersonName(rawCompany) ? rawCompany : rawName
   const recoveredCompany = cleanCompany(rawCompany, promotedName, role, tags)
   const email = textArray(input.emails)[0] || ''
@@ -43,9 +44,9 @@ export function normalizeExtraction(input: ExtractionResult): ContactDraft {
     email,
     phones: textArray(input.phones),
     website: normalizeWebsite(input.website),
-    address: text(input.address),
+    address: normalizeRealtorText(text(input.address)),
     tags,
-    notes: text(input.notes),
+    notes: normalizeRealtorText(text(input.notes)),
     confidence: score,
     needsReview:
       input.needs_review === true ||
