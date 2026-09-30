@@ -87,8 +87,8 @@ export async function passwordLogin(request: Request, env: Env): Promise<Respons
   }
 
   const ip = request.headers.get('CF-Connecting-IP') || ''
-  const emailAllowed = await allowed(rateLimiter(env, 'RL_LINK_EMAIL'), `password:${ip || 'unknown'}:${email}`)
-  const ipAllowed = await allowed(rateLimiter(env, 'RL_LINK_IP'), `password:${ip || 'unknown'}`)
+  const emailAllowed = await allowed(rateLimiter(env, 'RL_PASSWORD_EMAIL'), `${ip || 'unknown'}:${email}`)
+  const ipAllowed = await allowed(rateLimiter(env, 'RL_PASSWORD_IP'), ip || 'unknown')
   if (!emailAllowed || !ipAllowed) {
     return Response.json({ error: 'Too many requests — wait a minute.' }, { status: 429 })
   }

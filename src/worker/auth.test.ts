@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { hashPassword, verifyPassword } from './password'
 import { getUserByEmail, setUserPasswordHash } from './repository'
-import { passwordLogin, setAccountPassword, type CurrentUser } from './auth'
+import { passwordLogin, requestLoginLink, setAccountPassword, type CurrentUser } from './auth'
+
+vi.mock('./email', () => ({ sendLoginEmail: vi.fn() }))
 
 vi.mock('./repository', () => ({
   consumeLoginToken: vi.fn(),
@@ -88,6 +90,32 @@ describe('password auth', () => {
     const [, userId, storedHash] = vi.mocked(setUserPasswordHash).mock.calls[0]
     expect(userId).toBe('email:cody@example.com')
     await expect(verifyPassword('new secure password', storedHash)).resolves.toBe(true)
+  })
+
+  it('keeps magic-link sign-in available after password attempts are exhausted', async () => {
+    function quota(max: number) {
+      const counts = new Map<string, number>()
+      return { async limit({ key }: { key: string }) {
+        const count = (counts.get(key) || 0) + 1
+        counts.set(key, count)
+        return { success: count <= max }
+      } }
+    }
+    const env = {
+      SESSION_SECRET: SECRET,
+      RL_LINK_EMAIL: quota(2), RL_LINK_IP: quota(5),
+      RL_PASSWORD_EMAIL: quota(2), RL_PASSWORD_IP: quota(5),
+    } as unknown as Env
+    const credentials = { email: 'synthetic@example.com', password: 'wrong password' }
+    vi.mocked(getUserByEmail).mockResolvedValue(null)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect((await passwordLogin(jsonRequest('/api/auth/password-login', credentials), env)).status).toBe(401)
+    }
+    expect((await passwordLogin(jsonRequest('/api/auth/password-login', credentials), env)).status).toBe(429)
+    const link = await requestLoginLink(jsonRequest('/api/auth/request-link', { email: credentials.email }), env, new URL('https://cardcap.test'))
+    expect(link.status).toBe(200)
+    expect(await link.json()).toEqual({ ok: true })
+    expect((await passwordLogin(jsonRequest('/api/auth/password-login', credentials), env)).status).toBe(429)
   })
 })
 
