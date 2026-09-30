@@ -54,12 +54,12 @@ export function SignOutConfirm({ onConfirm, onCancel }: Props) {
           </div>
         </div>
         <div id="signout-body" className="session-body">
-          <p>CardCap and Blackboard use the same CSI sign-in. Signing out here also signs you out of Blackboard and any other CSI app you have open.</p>
+          <p>This also signs you out of Blackboard and any other CSI app you have open. They all use the same CSI sign-in.</p>
           <p>It can take up to 30 seconds to finish everywhere.</p>
         </div>
         <div className="modal-actions">
           <button ref={stay} className="btn primary" type="button" onClick={onCancel}>
-            Stay signed in
+            Cancel
           </button>
           <button className="btn" type="button" onClick={onConfirm}>
             Sign out
