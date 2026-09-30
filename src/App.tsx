@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { LoginGate } from './components/LoginGate'
-import { apiGet, apiJson, apiUpload } from './lib/api'
+import { SessionPanel, type SessionProblem } from './components/SessionPanel'
+import { ApiError, apiGet, apiJson, apiUpload, relativeEdgeUrl } from './lib/api'
 import { contactDisplayName, groupContactsByInitial, sortContactsByName } from './shared/contacts'
 import { contactNeedsReview, reviewedContact } from './shared/review'
 import type { Contact, ContactStatus } from './shared/types'
@@ -21,6 +22,10 @@ function App() {
   const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [sessionProblem, setSessionProblem] = useState<SessionProblem | null>(null)
+  const signedInRef = useRef(false)
+  const signedOutRef = useRef(false)
+  const draftRef = useRef<Contact | null>(null)
   const fileInput = useRef<HTMLInputElement | null>(null)
   const importInput = useRef<HTMLInputElement | null>(null)
   const selectedIdRef = useRef('')
@@ -38,23 +43,27 @@ function App() {
       setError('')
       try {
         const data = await apiGet<{ contacts: Contact[] }>('/api/contacts')
+        if (signedOutRef.current) return undefined // a slow load must not bring the screen back after sign out
         const sortedContacts = sortContactsByName(data.contacts)
         setContacts(sortedContacts)
         setAuthRequired(false)
         const nextId = preferredId || selectedIdRef.current
         selectContact(sortedContacts.find((contact) => contact.id === nextId) || sortedContacts[0] || null)
+        return sortedContacts
       } catch (err) {
-        const message = messageFrom(err)
-        if (message.includes('Sign in to continue')) {
+        if (signedInRef.current && err instanceof ApiError && (err.kind === 'session-ended' || err.kind === 'denied')) {
+          reportSessionProblem(err)
+        } else if (messageFrom(err).includes('Sign in to continue')) {
           setAuthRequired(true)
           setError('')
         } else {
-          setError(message)
+          setError(messageFrom(err))
         }
       } finally {
         setLoading(false)
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectContact],
   )
 
@@ -65,7 +74,9 @@ function App() {
         const me = await apiGet<{ email: string }>('/api/me')
         if (cancelled) return
         setUserEmail(me.email)
-        await loadContacts()
+        signedInRef.current = true
+        const loaded = await loadContacts()
+        if (loaded) restorePendingDraft(loaded)
       } catch {
         if (cancelled) return
         setAuthRequired(true)
@@ -105,6 +116,45 @@ function App() {
   const contactGroups = useMemo(() => groupContactsByInitial(filteredContacts), [filteredContacts])
   const reviewCount = useMemo(() => contacts.filter(contactNeedsReview).length, [contacts])
 
+  draftRef.current = draft
+
+  function reportSessionProblem(err: ApiError) {
+    if (err.kind === 'denied') {
+      setSessionProblem({ kind: 'denied', message: err.message, logoutUrl: err.logoutUrl })
+      return
+    }
+    const pending = draftRef.current
+    const original = pending ? contacts.find((contact) => contact.id === pending.id) : null
+    const hasUnsavedEdits = Boolean(pending && original && JSON.stringify(pending) !== JSON.stringify(original))
+    if (pending && hasUnsavedEdits) writePendingDraft(pending)
+    setSessionProblem({ kind: 'ended', hasUnsavedEdits })
+  }
+
+  // One place decides how a failed request is shown: session ended, account refused, offline, or a plain message.
+  function fail(err: unknown) {
+    if (err instanceof ApiError && signedInRef.current && (err.kind === 'session-ended' || err.kind === 'denied')) {
+      reportSessionProblem(err)
+      return
+    }
+    setError(messageFrom(err))
+  }
+
+  function restorePendingDraft(loaded: Contact[]) {
+    const saved = readPendingDraft()
+    if (!saved) return
+    clearPendingDraft()
+    if (!loaded.some((contact) => contact.id === saved.id)) return
+    setSelectedId(saved.id)
+    selectedIdRef.current = saved.id
+    setDraft(saved)
+    setNotice('Welcome back. We restored the edits you had not saved. Review them, then save.')
+  }
+
+  function signInAgain() {
+    // Reloading this page sends the browser through Access sign-in and back to the same page.
+    window.location.reload()
+  }
+
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
     setBusy(true)
@@ -128,7 +178,7 @@ function App() {
           : 'Cards added. Review the extracted fields before follow-up.',
       )
     } catch (err) {
-      setError(messageFrom(err))
+      fail(err)
     } finally {
       setBusy(false)
       if (fileInput.current) fileInput.current.value = ''
@@ -155,7 +205,7 @@ function App() {
           `${data.created} new, ${data.merged} merged${data.skipped ? `, ${data.skipped} skipped` : ''}.`,
       )
     } catch (err) {
-      setError(messageFrom(err))
+      fail(err)
     } finally {
       setBusy(false)
       if (importInput.current) importInput.current.value = ''
@@ -163,6 +213,8 @@ function App() {
   }
 
   async function handleSignedIn() {
+    signedOutRef.current = false
+    signedInRef.current = true
     setAuthRequired(false)
     const me = await apiGet<{ email: string }>('/api/me').catch(() => null)
     setUserEmail(me?.email || '')
@@ -170,7 +222,16 @@ function App() {
   }
 
   async function signOut() {
-    await apiJson<{ ok: boolean }>('/api/auth/logout', 'POST').catch(() => undefined)
+    const result = await apiJson<{ ok: boolean; logoutUrl?: string }>('/api/auth/logout', 'POST').catch(() => undefined)
+    const logoutUrl = relativeEdgeUrl(result?.logoutUrl) || (sessionProblem?.kind === 'denied' ? relativeEdgeUrl(sessionProblem.logoutUrl) : undefined)
+    if (logoutUrl) {
+      clearPendingDraft()
+      window.location.assign(logoutUrl)
+      return
+    }
+    signedOutRef.current = true
+    signedInRef.current = false
+    setSessionProblem(null)
     setUserEmail('')
     setContacts([])
     setPasswordPanelOpen(false)
@@ -194,7 +255,7 @@ function App() {
       setAccountPasswordConfirm('')
       setNotice('Password saved.')
     } catch (err) {
-      setError(messageFrom(err))
+      fail(err)
     } finally {
       setBusy(false)
     }
@@ -216,7 +277,7 @@ function App() {
       selectContact(data.contact)
       setNotice('Saved.')
     } catch (err) {
-      setError(messageFrom(err))
+      fail(err)
     } finally {
       setBusy(false)
     }
@@ -235,7 +296,7 @@ function App() {
       selectContact(next[0] || null)
       setNotice('Deleted.')
     } catch (err) {
-      setError(messageFrom(err))
+      fail(err)
     } finally {
       setBusy(false)
     }
@@ -258,7 +319,7 @@ function App() {
       selectContact(data.contact)
       setNotice('Marked reviewed.')
     } catch (err) {
-      setError(messageFrom(err))
+      fail(err)
     } finally {
       setBusy(false)
     }
@@ -277,6 +338,7 @@ function App() {
       <a className="skip-link" href="#main">
         Skip to contacts
       </a>
+      <div className="app-content" aria-busy={loading}>
       <div className="brand-bar" aria-hidden="true" />
       <header className="topbar">
         <div className="brand">
@@ -605,6 +667,8 @@ function App() {
         </aside>
       </main>
       )}
+      </div>
+      {sessionProblem && <SessionPanel problem={sessionProblem} onSignInAgain={signInAgain} onSignOut={() => void signOut()} />}
     </div>
   )
 }
@@ -629,6 +693,34 @@ function normalizeUrl(value: string): string {
 
 function phoneHref(value: string): string {
   return value.replace(/[^\d+]/g, '')
+}
+
+const PENDING_DRAFT_KEY = 'cardcap:pending-draft'
+
+// Edits are kept only in this browser tab's session storage, only while the sign-in page is visited, and cleared after restore.
+function writePendingDraft(contact: Contact) {
+  try {
+    sessionStorage.setItem(PENDING_DRAFT_KEY, JSON.stringify(contact))
+  } catch {
+    // Storage can be unavailable (private windows); edits simply are not kept.
+  }
+}
+
+function readPendingDraft(): Contact | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_DRAFT_KEY)
+    return raw ? (JSON.parse(raw) as Contact) : null
+  } catch {
+    return null
+  }
+}
+
+function clearPendingDraft() {
+  try {
+    sessionStorage.removeItem(PENDING_DRAFT_KEY)
+  } catch {
+    // ignore
+  }
 }
 
 function messageFrom(error: unknown): string {

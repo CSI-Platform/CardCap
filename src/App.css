@@ -742,3 +742,24 @@ textarea:focus {
     scroll-behavior: auto !important;
   }
 }
+
+/* Session ended / account refused dialog */
+.session-panel {
+  border-top-color: var(--csi-copper);
+}
+
+.session-body {
+  display: grid;
+  gap: var(--csi-s3);
+}
+
+.session-body p {
+  margin: 0;
+  max-width: var(--csi-measure);
+  font: var(--csi-body);
+  color: var(--csi-text);
+}
+
+.app-content[inert] {
+  opacity: 0.4;
+}
