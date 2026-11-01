@@ -12,9 +12,12 @@
     "test": "vitest run --config vitest.config.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:browser": "playwright test",
+    "test:browser:access": "playwright test --config playwright.access.config.ts",
+    "test:rollback": "node --import tsx scripts/test-rollback.ts",
     "test:browser:server": "tsx e2e/browser/server.ts"
   },
   "dependencies": {
+    "jose": "6.2.12",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

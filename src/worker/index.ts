@@ -22,6 +22,7 @@ import {
   verifyLogin,
 } from './auth'
 import { extractCard } from './extract'
+import { accessIdentity, authenticationMode, resolveAccessUser, AccessAccountConflictError, AccessConfigurationError } from './access'
 import {
   ContactConflictError,
   countExtractionJobsSince,
@@ -47,6 +48,8 @@ export default {
       ctx.waitUntil(Promise.resolve())
       return response
     } catch (error) {
+      if (error instanceof AccessConfigurationError) return json({ error: 'Sign-in is temporarily unavailable.' }, 503)
+      if (error instanceof AccessAccountConflictError) return json({ error: 'Account access requires review.' }, 403)
       if (error instanceof ContactConflictError) return json({ error: 'Contact id is not available' }, 409)
       console.error(JSON.stringify({ level: 'error', errorType: error instanceof Error ? error.name : 'UnknownError', path: url.pathname }))
       return json({ error: 'Unable to complete this request. Please try again.' }, 500)
@@ -55,6 +58,25 @@ export default {
 } satisfies ExportedHandler<Env>
 
 async function route(request: Request, env: Env, url: URL): Promise<Response> {
+  const mode = authenticationMode(env)
+  let accessUser = null
+  if (mode === 'access') {
+    const identity = await accessIdentity(request, env)
+    if (!identity) return json({ error: 'Sign in to continue.', loginUrl: '/cdn-cgi/access/login' }, 401)
+    if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
+      const response = logout()
+      return new Response(JSON.stringify({ logoutUrl: '/cdn-cgi/access/logout' }), {
+        headers: response.headers,
+      })
+    }
+    accessUser = await resolveAccessUser(env.DB, identity)
+    if (['/api/auth/request-link', '/api/auth/password-login', '/api/auth/verify', '/api/auth/set-password'].includes(url.pathname)) {
+      return json({ error: 'Use Access to sign in.' }, 410)
+    }
+    if (request.method === 'GET' && url.pathname === '/api/auth/config') {
+      return json({ mode: 'access', loginUrl: '/cdn-cgi/access/login', logoutUrl: '/cdn-cgi/access/logout' })
+    }
+  }
   if (request.method === 'GET' && url.pathname === '/api/health') {
     return json({ ok: true, extractor: env.AI_EXTRACTOR })
   }
@@ -79,7 +101,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return logout()
   }
 
-  const user = await currentUser(request, env)
+  const user = accessUser ?? await currentUser(request, env)
   if (!user) {
     return json({ error: 'Sign in to continue.' }, 401)
   }

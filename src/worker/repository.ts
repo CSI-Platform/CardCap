@@ -366,6 +366,19 @@ export async function upsertUser(db: D1Database, userId: string, email: string, 
   await ensureUser(db, userId, email, email, authProvider, now)
 }
 
+export async function magicLinkUser(db: D1Database, email: string): Promise<{ id: string; email: string } | null> {
+  await ensureSchema(db)
+  const normalized = email.trim().toLowerCase()
+  const now = new Date().toISOString()
+  // Preserve Access and older opaque owner IDs; never create a duplicate by email.
+  await db.prepare(`INSERT OR IGNORE INTO users (id,email,name,auth_provider,created_at,updated_at)
+    SELECT ?, ?, ?, 'magic-link', ?, ? WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(trim(email)) = ?)`)
+    .bind(`email:${normalized}`, normalized, normalized, now, now, normalized).run()
+  const rows = await db.prepare('SELECT id,email FROM users WHERE lower(trim(email)) = ? LIMIT 2')
+    .bind(normalized).all<{ id: string; email: string }>()
+  return rows.results.length === 1 ? rows.results[0] : null
+}
+
 function emailFromUserId(userId: string): string {
   return userId.startsWith('email:') ? userId.slice('email:'.length) : ''
 }
