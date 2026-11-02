@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, apiJson } from '../lib/api'
+import { CardArtwork } from './CardArtwork'
 
 declare global {
   interface Window {
@@ -116,9 +117,14 @@ export function LoginGate({ onSignedIn }: LoginGateProps) {
   }
 
   return (
-    <main className="unlock-screen">
-      <section className="unlock-panel">
-        <h2>Sign in to CardCap</h2>
+    <main className="unlock-screen" id="main" tabIndex={-1}>
+      <div className="auth-intro">
+        <CardArtwork />
+        <p className="auth-title">Business cards.<br />Useful contacts.</p>
+        <p>Photograph your cards, review the details, and export your contacts whenever you need them.</p>
+      </div>
+      <section className="unlock-panel" aria-labelledby="signin-title">
+        <h2 id="signin-title">Sign in to CardCap</h2>
         {mode === 'password' && (
           <>
             <label>

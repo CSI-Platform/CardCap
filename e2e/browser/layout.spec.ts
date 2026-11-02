@@ -129,6 +129,22 @@ test('after adding a card the new contact opens for review with its photo', asyn
   await expect(page.locator('.review-chip')).toBeVisible()
 })
 
+test('desktop collection uses the workspace and a contact can return to the collection', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await signIn(page, request)
+  await importContacts(page)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Contacts', exact: true })).toBeVisible()
+  const collection = await page.locator('.view-list .sidebar').boundingBox()
+  expect(collection?.width).toBeGreaterThan(1000)
+  await page.locator('.contact-row', { hasText: 'Ada Lovelace' }).click()
+  await expect(page.getByLabel('Name', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'All contacts', exact: true }).click()
+  await expect(page.getByRole('searchbox')).toBeVisible()
+  await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.contact-row')).toHaveCount(3)
+})
+
 test('controls are compact with a mouse', async ({ page, request }) => {
   await signIn(page, request)
   await importContacts(page)
@@ -205,6 +221,7 @@ test('fonts are served from this site: no request goes to a font provider and th
     if (res.url().endsWith('.woff2')) fontFiles.push({ url: new URL(res.url()).pathname, status: res.status() })
   })
   await signIn(page, request)
+  await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
   expect([...hosts]).toEqual(['127.0.0.1:5199'])
   expect(await page.evaluate(() => document.fonts.check('16px "Atkinson Hyperlegible Next"'))).toBe(true)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { LoginGate } from './components/LoginGate'
+import { CardArtwork } from './components/CardArtwork'
 import { Menu } from './components/Menu'
 import { SessionPanel, type SessionProblem } from './components/SessionPanel'
 import { SignOutConfirm } from './components/SignOutConfirm'
@@ -366,7 +367,7 @@ function App() {
     contacts.length === 0 ? (loading ? 'loading' : 'empty') : draft ? 'edit' : 'list'
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${authRequired ? ' signed-out' : ''}`}>
       <a className="skip-link" href="#main">
         Skip to contacts
       </a>
@@ -386,6 +387,7 @@ function App() {
         {!authRequired && (
           <div className="toolbar">
             <button className="btn primary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
+              <span className="add-symbol" aria-hidden="true">+</span>
               Add cards
             </button>
             <input
@@ -502,28 +504,42 @@ function App() {
 
           {view === 'empty' && (
             <section className="welcome" aria-labelledby="welcome-title">
-              <h2 id="welcome-title">Add your first business cards</h2>
-              <p>Choose Add cards at the top to take a photo or pick pictures of business cards. CardCap reads each one, you check it, and then you save it to your list.</p>
+              <CardArtwork />
+              <div className="welcome-copy">
+                <h2 id="welcome-title">Add your first business cards</h2>
+                <p>Take a photo or upload your cards using Add cards. Review the details, then keep every contact here.</p>
+              </div>
               <ol className="welcome-steps">
                 <li>
                   <strong>Add</strong>
-                  <span>Photos of cards</span>
+                  <span>Take a photo or upload</span>
                 </li>
                 <li>
                   <strong>Review</strong>
-                  <span>Fix anything it missed</span>
+                  <span>Check the contact details</span>
                 </li>
                 <li>
                   <strong>Export</strong>
-                  <span>CSV, vCard or iContact</span>
+                  <span>Take your contacts with you</span>
                 </li>
               </ol>
               <div className="welcome-actions">
+                <span>Already have a contact list?</span>
                 <button className="btn" type="button" onClick={() => importInput.current?.click()} disabled={busy}>
                   Import a file
                 </button>
               </div>
             </section>
+          )}
+
+          {view === 'list' && (
+            <div className="collection-heading">
+              <div>
+                <h2>Contacts <span className="collection-count" aria-hidden="true">{contacts.length}</span></h2>
+                <p>Search your cards, review details, and follow up.</p>
+              </div>
+              {reviewCount > 0 && <span className="collection-review">{reviewCount} to review</span>}
+            </div>
           )}
 
           {(view === 'list' || view === 'edit') && (
@@ -553,7 +569,7 @@ function App() {
 
               <div className="contact-list">
                 <div className="list-head">
-                  <strong>Contacts</strong>
+                  <strong>Name / company</strong>
                   <span>
                     {filteredContacts.length} shown
                     {reviewCount > 0 ? `, ${reviewCount} to review` : ''}
@@ -590,7 +606,9 @@ function App() {
                           <strong>{contactDisplayName(contact)}</strong>
                           <small>{[contact.company, contact.role].filter(Boolean).join(' - ') || contact.email || 'Needs review'}</small>
                         </span>
+                        <span className="contact-status">{contact.status}</span>
                         {contactNeedsReview(contact) && <span className="row-flag">Review</span>}
+                        <span className="row-arrow" aria-hidden="true">→</span>
                       </button>
                     ))}
                   </section>
@@ -602,11 +620,12 @@ function App() {
           {view === 'edit' && draft && (
             <>
               <section className="editor" aria-label="Edit contact">
-                <div className="phone-bar">
+                <div className="contact-navigation">
                   <button className="btn back-button" type="button" onClick={() => selectContact(null)}>
+                    <span aria-hidden="true">←</span>
                     All contacts
                   </button>
-                  <div className="segmented" role="group" aria-label="Show">
+                  <div className="segmented phone-only" role="group" aria-label="Show">
                     <button type="button" aria-pressed={!photoTab} onClick={() => setPhotoTab(false)}>
                       Details
                     </button>
@@ -623,7 +642,7 @@ function App() {
                       <div className="head-flags">
                         {contactNeedsReview(draft) && <span className="review-chip">Needs review</span>}
                         <span className="confidence" title="How sure CardCap is about what it read">
-                          {Math.round(draft.extractionConfidence * 100)}%
+                          {Math.round(draft.extractionConfidence * 100)}% confidence
                         </span>
                       </div>
                     </div>
