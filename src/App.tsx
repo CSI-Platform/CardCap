@@ -205,6 +205,11 @@ function App() {
   async function handleImport(files: FileList | null) {
     const file = files?.[0]
     if (!file) return
+    if (file.type.startsWith('image/')) {
+      await handleFiles(files)
+      if (importInput.current) importInput.current.value = ''
+      return
+    }
     setBusy(true)
     setError('')
     setNotice(`Importing ${file.name}...`)
@@ -406,7 +411,7 @@ function App() {
               ref={importInput}
               className="hidden-input"
               type="file"
-              accept=".csv,.vcf,.vcard,.json,text/csv,text/vcard,application/json"
+              accept="image/*,.csv,.vcf,.vcard,.json,text/csv,text/vcard,application/json"
               onChange={(event) => void handleImport(event.currentTarget.files)}
             />
             <Menu
@@ -507,7 +512,7 @@ function App() {
               <CardArtwork />
               <div className="welcome-copy">
                 <h2 id="welcome-title">Add your first business cards</h2>
-                <p>Take a photo or upload your cards using Add cards. Review the details, then keep every contact here.</p>
+                <p>Take a photo with Add cards, or import a card image. Review the details, then keep every contact here.</p>
               </div>
               <ol className="welcome-steps">
                 <li>
@@ -524,7 +529,7 @@ function App() {
                 </li>
               </ol>
               <div className="welcome-actions">
-                <span>Already have a contact list?</span>
+                <span>Card photos, CSV, vCard or JSON</span>
                 <button className="btn" type="button" onClick={() => importInput.current?.click()} disabled={busy}>
                   Import a file
                 </button>

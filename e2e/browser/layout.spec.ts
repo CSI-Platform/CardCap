@@ -161,6 +161,20 @@ test('controls are compact with a mouse', async ({ page, request }) => {
 test.describe('on a phone: one task at a time', () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
 
+  test('the welcome Import a file picker accepts a card photo and opens it for review', async ({ page, request }) => {
+    await signIn(page, request)
+    const chooserReady = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: 'Import a file', exact: true }).click()
+    const chooser = await chooserReady
+    expect(await chooser.element().getAttribute('accept')).toContain('image/*')
+    await chooser.setFiles({ name: 'business-card.png', mimeType: 'image/png', buffer: PNG_BUFFER })
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
+    await expect(page.getByRole('status')).toContainText('Cards added')
+    await expect(page.locator('input[type=file][accept*=".csv"]')).toHaveValue('')
+    await page.getByRole('button', { name: 'Card photo', exact: true }).click()
+    await expect(page.locator('.source-body img')).toBeVisible()
+  })
+
   test('welcome, then list, then one contact at a time with details and photo on separate screens', async ({ page, request }) => {
     await signIn(page, request)
     // Empty: only the welcome.
