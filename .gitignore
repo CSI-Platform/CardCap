@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 .wrangler
+.cloudflare/
 .dev.vars
 .dev.vars.*
 !*.example

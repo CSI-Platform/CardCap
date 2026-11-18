@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-const distDir = 'dist'
+const distDir = join('.cloudflare', 'output')
 const secretFileNames = new Set(['.dev.vars', '.env', '.env.local', '.env.production', '.env.development'])
 
 if (!existsSync(distDir)) {

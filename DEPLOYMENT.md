@@ -27,7 +27,7 @@ The Worker expects these secrets to be configured in Cloudflare:
 
 Do not commit secret values. Local development secrets belong in `.dev.vars`, which is ignored by git.
 
-## First Deploy of Magic-Link Auth (one-time sequence)
+## Historical first-deploy instructions for magic-link auth
 
 1. Snapshot: `npx wrangler d1 export cardcap-db --remote --output backup-2026-06-09.sql`
 2. Fresh start (wipes pre-auth beta data): `npx wrangler d1 execute cardcap-db --remote --command "DELETE FROM extraction_jobs; DELETE FROM contacts; DELETE FROM users;"`
@@ -56,20 +56,20 @@ npm run lint
 npm run build
 ```
 
-The build script removes generated local env files from `dist/cardcap`.
+The build script removes generated local env files from `.cloudflare/output`.
 
 ## Deploy
 
 ```powershell
-npx wrangler whoami
-npm run build
-npx wrangler deploy
+npx cf auth whoami
+npm run deploy -- --dry-run
+npm run deploy
 ```
 
 If Cloudflare auth expires:
 
 ```powershell
-npx wrangler login
+npx cf auth login
 ```
 
 ## Production Smoke Test

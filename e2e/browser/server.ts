@@ -1,4 +1,4 @@
-// Serves the built SPA (dist/client) plus the real Worker on local Miniflare for browser tests.
+// Serves the built SPA plus the real Worker on local Miniflare for browser tests.
 // /__test/* are test-only controls; they are not part of the app.
 // With ACCESS_SIM=1 the Worker runs in AUTH_MODE=access behind a SIMULATED Cloudflare Access edge: nothing is served without
 // a simulated session cookie, unauthenticated requests (pages and API calls alike) are redirected to a fake sign-in page,
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { startHarness } from '../harness'
 
 const port = Number(process.env.PORT || 5199)
-const dist = resolve(process.env.CARDCAP_DIST || join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'client'))
+const dist = resolve(process.env.CARDCAP_DIST || join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.cloudflare', 'output', 'v1', 'workers', 'default', 'assets'))
 const accessSim = process.env.ACCESS_SIM === '1'
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.txt': 'text/plain' }
 
