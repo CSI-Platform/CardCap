@@ -1,84 +1,28 @@
-# CardCap Deployment
+# Deploy CardCap to Cloudflare
 
-## Canonical Project Path
+The Worker serves the React app and its API from one hostname. [cloudflare.config.ts](cloudflare.config.ts) defines the deployment target and bindings.
 
-`C:\Users\codyl\Desktop\csiOS\Projects\CARDCAP`
+## Configure your environment
 
-Use this folder for future development, commits, and deploys. The earlier Codex `outputs\cardcap-app` folder is historical.
+1. Install Node.js 24, run `npm ci`, and authenticate with `npx cf auth login`.
+2. In the deployment configuration, set your Cloudflare account, Worker name, custom domain, and `PUBLIC_ORIGIN`. Use the HTTPS origin for the domain where users will open sign-in links.
+3. Create a D1 database and R2 bucket in your account. Update the database ID and bucket name, enable Workers AI and Browser Run, and configure the rate-limit bindings for your Worker.
+4. Verify a sending domain in Cloudflare Email Service. Set `SENDER_EMAIL` and the email binding’s allowed sender to the same address.
+5. Configure a Turnstile widget for the app hostname. Set the public `TURNSTILE_SITE_KEY` in the configuration and store its paired `TURNSTILE_SECRET_KEY` and a randomly generated `SESSION_SECRET` as Worker secrets. Rotating the session secret signs users out.
 
-## Live Beta
+## Migrate and deploy
 
-- URL: `https://cc.csi.run`
-- Worker name: `cardcap`
-- D1 database: `cardcap-db`
-- D1 database ID: `d3a74ece-fba4-4d92-a167-dfa21998c9ab`
-- R2 bucket: `cardcap-card-images`
+Review the pending [D1 migrations](migrations/) against the intended database. Replace `DATABASE_ID` below with its ID. The apply command runs all pending migrations in the directory.
 
-## Secrets
-
-The Worker expects these secrets to be configured in Cloudflare:
-
-- `SESSION_SECRET` (32+ random characters; rotating it signs everyone out)
-Sign-in links are sent through the native Cloudflare EMAIL binding from `cardcap@notify.copperstateit.com`. The domain must be verified for Email Sending.
-- `TURNSTILE_SECRET_KEY` (paired with the public `TURNSTILE_SITE_KEY` var in wrangler.jsonc)
-
-`BETA_ACCESS_CODE` is retired and should be deleted from the Worker.
-
-Do not commit secret values. Local development secrets belong in `.dev.vars`, which is ignored by git.
-
-## Historical first-deploy instructions for magic-link auth
-
-1. Snapshot: `npx wrangler d1 export cardcap-db --remote --output backup-2026-06-09.sql`
-2. Fresh start (wipes pre-auth beta data): `npx wrangler d1 execute cardcap-db --remote --command "DELETE FROM extraction_jobs; DELETE FROM contacts; DELETE FROM users;"`
-3. Apply migrations: `npx wrangler d1 migrations apply cardcap-db --remote`
-4. Create a Turnstile widget in the Cloudflare dashboard (Managed mode, hostname `cardcap.codylecates.workers.dev`); paste the site key into `TURNSTILE_SITE_KEY` in `wrangler.jsonc`, then `npx wrangler secret put TURNSTILE_SECRET_KEY`
-5. `npx wrangler secret put SESSION_SECRET`
-6. Verify the configured sender domain in Cloudflare Email Service
-7. `npx wrangler secret delete BETA_ACCESS_CODE`
-8. `npm run build && npx wrangler deploy`
-9. Smoke: `/api/health` returns `ok`; full sign-in round-trip from a phone; check a corporate-style inbox's spam folder for the link; upload one card and confirm `extractionMode: "openai"`; download the iContact CSV and test-import it into iContact.
-
-## Local Development
-
-```powershell
-npm ci
-npm run dev
-```
-
-Open `http://127.0.0.1:5173/`.
-
-## Verification
-
-```powershell
-npm test
-npm run lint
-npm run build
-```
-
-The build script removes generated local env files from `.cloudflare/output`.
-
-## Deploy
-
-```powershell
-npx cf auth whoami
+```sh
 npm run deploy -- --dry-run
+npx cf d1 migrations list DATABASE_ID
+npx cf d1 migrations apply DATABASE_ID
 npm run deploy
 ```
 
-If Cloudflare auth expires:
+The deploy script builds the app and uploads it using the Cloudflare CLI. It expects the configured resources to exist.
 
-```powershell
-npx cf auth login
-```
+## Verify the release
 
-## Production Smoke Test
-
-After deployment, verify:
-
-```powershell
-Invoke-RestMethod -Uri 'https://cc.csi.run/api/health'
-```
-
-Expected: JSON with `ok: true` and `extractor: cloudflare`.
-
-For full upload testing, unlock with the beta session, upload a real card image, confirm `extractionMode` is `cloudflare`, then delete the temporary contact.
+Check that `/api/health` returns `ok: true`. Sign in on the deployed hostname, capture a sample contact, and confirm its details in a CSV export.
