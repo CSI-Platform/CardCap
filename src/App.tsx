@@ -9,6 +9,7 @@ import { ApiError, apiGet, apiJson, apiUpload, relativeEdgeUrl } from './lib/api
 import { contactDisplayName, groupContactsByInitial, sortContactsByName } from './shared/contacts'
 import { contactNeedsReview, reviewedContact } from './shared/review'
 import type { Contact, ContactStatus } from './shared/types'
+import { findDuplicateContact } from './shared/duplicates'
 
 function App() {
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -18,6 +19,8 @@ function App() {
   const [draft, setDraft] = useState<Contact | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [captureInput, setCaptureInput] = useState('')
+  const [capturing, setCapturing] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [userEmail, setUserEmail] = useState('')
   const [accessMode, setAccessMode] = useState(false)
@@ -202,6 +205,22 @@ function App() {
     }
   }
 
+  async function prepareContact() {
+    setBusy(true)
+    setCapturing(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await apiJson<{ contact: Contact }>('/api/contact-drafts', 'POST', { input: captureInput.trim() })
+      if (!signedOutRef.current) selectContact(result.contact)
+    } catch (err) {
+      fail(err)
+    } finally {
+      setBusy(false)
+      setCapturing(false)
+    }
+  }
+
   async function handleImport(files: FileList | null) {
     const file = files?.[0]
     if (!file) return
@@ -269,6 +288,7 @@ function App() {
     setSessionProblem(null)
     setUserEmail('')
     setContacts([])
+    setCaptureInput('')
     setPasswordPanelOpen(false)
     setAccountPassword('')
     setAccountPasswordConfirm('')
@@ -298,17 +318,18 @@ function App() {
 
   async function saveDraft() {
     if (!draft) return
-    if (!draft.name.trim()) {
-      setError('Name is required before saving.')
+    if (!draft.name.trim() && !draft.company.trim()) {
+      setError('Enter a name or company before saving.')
       return
     }
     setBusy(true)
     setError('')
     try {
-      const data = await apiJson<{ contact: Contact }>(`/api/contacts/${encodeURIComponent(draft.id)}`, 'PUT', {
-        contact: draft,
+      const data = await apiJson<{ contact: Contact }>(isPreview ? '/api/contacts' : `/api/contacts/${encodeURIComponent(draft.id)}`, isPreview ? 'POST' : 'PUT', {
+        contact: isPreview ? reviewedContact(draft) : draft,
       })
-      setContacts((current) => sortContactsByName(current.map((contact) => (contact.id === data.contact.id ? data.contact : contact))))
+      setContacts((current) => sortContactsByName([...current.filter(contact => contact.id !== data.contact.id), data.contact]))
+      if (isPreview) setCaptureInput('')
       selectContact(data.contact)
       setNotice('Saved.')
     } catch (err) {
@@ -339,8 +360,8 @@ function App() {
 
   async function markReviewed() {
     if (!draft) return
-    if (!draft.name.trim()) {
-      setError('Name is required before marking reviewed.')
+    if (!draft.name.trim() && !draft.company.trim()) {
+      setError('Enter a name or company before marking reviewed.')
       return
     }
     const next = reviewedContact(draft)
@@ -368,8 +389,9 @@ function App() {
     window.location.href = path
   }
 
-  const view: 'loading' | 'empty' | 'list' | 'edit' =
-    contacts.length === 0 ? (loading ? 'loading' : 'empty') : draft ? 'edit' : 'list'
+  const isPreview = Boolean(draft?.source && !contacts.some(contact => contact.id === draft.id))
+  const duplicate = isPreview && draft ? findDuplicateContact(draft, contacts) : null
+  const view = draft ? 'edit' : contacts.length ? 'list' : loading ? 'loading' : 'empty'
 
   return (
     <div className={`app-shell${authRequired ? ' signed-out' : ''}`}>
@@ -507,6 +529,17 @@ function App() {
         <main className={`workspace view-${view}${photoTab ? ' show-photo' : ''}`} id="main" tabIndex={-1}>
           {view === 'loading' && <div className="empty">Loading contacts...</div>}
 
+          {(view === 'empty' || view === 'list') && (
+            <form className="capture-form" onSubmit={event => { event.preventDefault(); void prepareContact() }}>
+              <label htmlFor="contact-capture">Paste a signature, business details, or a website</label>
+              <textarea id="contact-capture" value={captureInput} maxLength={12000} rows={2} disabled={busy}
+                placeholder="Business details or example.com" onChange={event => setCaptureInput(event.currentTarget.value)} />
+              <button className="btn" disabled={busy || !captureInput.trim()}>
+                {capturing ? 'Finding contact details…' : 'Review contact'}
+              </button>
+            </form>
+          )}
+
           {view === 'empty' && (
             <section className="welcome" aria-labelledby="welcome-title">
               <CardArtwork />
@@ -635,14 +668,14 @@ function App() {
                       Details
                     </button>
                     <button type="button" aria-pressed={photoTab} onClick={() => setPhotoTab(true)}>
-                      Card photo
+                      {draft.source ? 'Source' : 'Card photo'}
                     </button>
                   </div>
                 </div>
                 <div className="editor-body">
                   <div className="editor-head">
                     <div>
-                      <h2>{draft.name || 'Review contact'}</h2>
+                      <h2>{contactDisplayName(draft)}</h2>
                       <p>{[draft.company, draft.role].filter(Boolean).join(' - ') || 'Extracted card draft'}</p>
                       <div className="head-flags">
                         {contactNeedsReview(draft) && <span className="review-chip">Needs review</span>}
@@ -725,23 +758,27 @@ function App() {
                 </div>
 
                 <div className="actions">
+                  {duplicate && <div role="status" className="capture-match">
+                    Possible match by {duplicate.reasons.join(', ')}: {contactDisplayName(duplicate.contact)}.{' '}
+                    <button type="button" className="btn" onClick={() => selectContact(duplicate.contact)}>Open existing contact</button>
+                  </div>}
                   <button className="btn primary" type="button" onClick={() => void saveDraft()} disabled={busy}>
-                    Save contact
+                    {duplicate ? 'Save as separate contact' : 'Save contact'}
                   </button>
-                  {contactNeedsReview(draft) && (
+                  {!isPreview && contactNeedsReview(draft) && (
                     <button className="btn" type="button" onClick={() => void markReviewed()} disabled={busy}>
                       Mark reviewed
                     </button>
                   )}
-                  <button className="btn danger" type="button" onClick={() => void deleteSelected()} disabled={busy}>
-                    Delete
+                  <button className={isPreview ? 'btn' : 'btn danger'} type="button" onClick={() => isPreview ? selectContact(null) : void deleteSelected()} disabled={busy}>
+                    {isPreview ? 'Cancel' : 'Delete'}
                   </button>
                 </div>
               </section>
 
-              <aside className="source-panel" aria-label="Card photo">
+              <aside className="source-panel" aria-label={draft.source ? 'Contact source' : 'Card photo'}>
                 <div className="source-head">
-                  <h2>Card photo</h2>
+                  <h2>{draft.source ? 'Contact source' : 'Card photo'}</h2>
                   {draft.sourceImageUrl && (
                     <a href={draft.sourceImageUrl} target="_blank" rel="noreferrer">
                       Open full size
@@ -749,9 +786,14 @@ function App() {
                   )}
                 </div>
                 <div className="source-body">
+                  {draft.source && <div className="capture-evidence">
+                    {draft.source.url ? <a href={draft.source.url} target="_blank" rel="noreferrer">View source page</a> : <strong>Pasted text</strong>}
+                    <small>Captured {new Date(draft.source.checkedAt).toLocaleDateString()}</small>
+                    <p>{draft.source.text}</p>
+                  </div>}
                   {draft.sourceImageUrl ? (
                     <img src={draft.sourceImageUrl} alt={`Business card for ${draft.name || 'contact'}`} />
-                  ) : (
+                  ) : !draft.source && (
                     <div className="empty">This contact has no card photo.</div>
                   )}
                 </div>

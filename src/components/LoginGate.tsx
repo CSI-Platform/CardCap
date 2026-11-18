@@ -96,7 +96,7 @@ export function LoginGate({ onSignedIn }: LoginGateProps) {
 
   async function requestLink() {
     const trimmed = email.trim()
-    if (!trimmed) return
+    if (!trimmed || busy || (siteKey && !turnstileToken)) return
     setBusy(true)
     setError('')
     try {
@@ -104,6 +104,8 @@ export function LoginGate({ onSignedIn }: LoginGateProps) {
         email: trimmed,
         turnstileToken,
       })
+      setTurnstileToken('')
+      widgetIdRef.current = ''
       setSent(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -219,8 +221,8 @@ export function LoginGate({ onSignedIn }: LoginGateProps) {
               15 minutes.
             </p>
             <p>Don&apos;t see it? Check your spam or junk folder.</p>
-            <button className="btn" type="button" onClick={() => void requestLink()} disabled={busy}>
-              Send it again
+            <button className="btn" type="button" onClick={() => setSent(false)} disabled={busy}>
+              Change address or request another link
             </button>
           </>
         )}

@@ -21,7 +21,7 @@ let h: Harness
 
 beforeEach(async () => {
   h = await startHarness()
-  h.openai.mode = { kind: 'card', card: CARD }
+  h.inference.mode = { kind: 'card', card: CARD }
 })
 
 afterEach(async () => {
@@ -163,7 +163,7 @@ describe('upload → review/edit → save → reload → export', () => {
 describe('failed extraction', () => {
   scenario('an extraction service error fails the upload cleanly: no contact, no orphaned image, no upstream detail leaked', async () => {
     const alice = await h.signIn('alice@example.test')
-    h.openai.mode = { kind: 'http-error', status: 500, body: 'upstream-internal-detail-abc123' }
+    h.inference.mode = { kind: 'http-error', status: 500, body: 'upstream-internal-detail-abc123' }
 
     const { res, text } = await uploadCard(alice)
     expect(res.status).toBe(502)
@@ -176,7 +176,7 @@ describe('failed extraction', () => {
 
   scenario('unparseable model output fails the upload cleanly with no contact and no orphaned image', async () => {
     const alice = await h.signIn('alice@example.test')
-    h.openai.mode = { kind: 'garbage' }
+    h.inference.mode = { kind: 'garbage' }
 
     const { res } = await uploadCard(alice)
     expect([422, 502]).toContain(res.status)
@@ -188,10 +188,10 @@ describe('failed extraction', () => {
 
   scenario('after a failed extraction the user can retry the same card and get one correct contact', async () => {
     const alice = await h.signIn('alice@example.test')
-    h.openai.mode = { kind: 'http-error', status: 503, body: 'overloaded' }
+    h.inference.mode = { kind: 'http-error', status: 503, body: 'overloaded' }
     expect((await uploadCard(alice)).res.status).toBe(502)
 
-    h.openai.mode = { kind: 'card', card: CARD }
+    h.inference.mode = { kind: 'card', card: CARD }
     const retry = await uploadCard(alice)
     expect(retry.res.status).toBe(201)
 
@@ -207,7 +207,7 @@ describe('failed extraction', () => {
     const noFile = await alice.request('/api/cards/upload', { method: 'POST', body: emptyForm() })
     expect(noFile.status).toBe(400)
     expect(await h.r2Keys()).toEqual([])
-    expect(h.openai.calls).toBe(0)
+    expect(h.inference.calls).toBe(0)
   })
 })
 

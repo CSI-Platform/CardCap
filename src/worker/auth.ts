@@ -62,7 +62,9 @@ export async function requestLoginLink(request: Request, env: Env, url: URL): Pr
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString()
   await createLoginToken(env.DB, await sha256Hex(rawToken), email, expiresAt)
 
-  const link = `${url.origin}/api/auth/verify?token=${rawToken}`
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  const origin = local ? url.origin : envValue(env, 'PUBLIC_ORIGIN') || url.origin
+  const link = `${origin}/api/auth/verify?token=${rawToken}`
   try {
     await sendLoginEmail(env, email, link)
   } catch {

@@ -20,7 +20,7 @@ async function signIn(page: Page, request: APIRequestContext, email: string) {
 }
 
 async function withContact(page: Page, request: APIRequestContext) {
-  await request.get('/__test/openai?mode=card')
+  await request.get('/__test/inference?mode=card')
   await signIn(page, request, uniqueEmail())
   await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'maria.png', mimeType: 'image/png', buffer: PNG_BUFFER })
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')

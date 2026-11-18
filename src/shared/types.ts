@@ -15,6 +15,7 @@ export type Contact = {
   status: ContactStatus
   sourceImageKey: string
   sourceImageUrl: string
+  source?: { text: string; url: string; checkedAt: string }
   extractionConfidence: number
   needsReview: boolean
   createdAt: string

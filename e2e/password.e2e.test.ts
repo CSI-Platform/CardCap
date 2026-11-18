@@ -7,7 +7,7 @@ let h: Harness
 
 beforeEach(async () => {
   h = await startHarness()
-  h.openai.mode = {
+  h.inference.mode = {
     kind: 'card',
     card: { name: 'Maria Okafor', company: 'Sunrise Realty Group', role: 'Broker', emails: ['maria@sunrise.example'], phones: ['(602) 555-0142'], website: '', address: '', tags: [], notes: '', confidence: 0.95, needs_review: false },
   }

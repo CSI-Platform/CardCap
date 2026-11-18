@@ -11,13 +11,11 @@ import { FormData as MfFormData, Miniflare, Response as MfResponse } from 'minif
 const here = dirname(fileURLToPath(import.meta.url))
 
 // Runs the real Worker (src/worker/index.ts) on local Miniflare with in-memory D1/R2.
-// Outbound fetches (OpenAI, Resend) are intercepted: nothing leaves the machine and no paid AI call is made.
+// Inference and outbound mail are intercepted: nothing leaves the machine and no paid AI call is made.
 
 export const SESSION_SECRET = 'e2e-session-secret-not-real'
-export const OPENAI_HOST = 'api.openai.com'
-export const RESEND_HOST = 'api.resend.com'
 
-export type OpenAiMode =
+export type InferenceMode =
   | { kind: 'card'; card: Record<string, unknown> }
   | { kind: 'http-error'; status: number; body: string }
   | { kind: 'garbage' }
@@ -44,7 +42,7 @@ export type AccessSim = {
 export type Harness = {
   access: AccessSim
   mf: Miniflare
-  openai: { mode: OpenAiMode; calls: number }
+  inference: { mode: InferenceMode; calls: number }
   trace: TraceEntry[]
   signIn(email: string): Promise<Session>
   anonymous(): Session
@@ -66,7 +64,29 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const outDir = mkdtempSync(join(tmpdir(), 'cardcap-e2e-'))
   const bundle = join(outDir, 'worker.mjs')
   await build({
-    entryPoints: [join(root, 'src/worker/index.ts')],
+    stdin: {
+      resolveDir: root,
+      contents: `
+        import worker from './src/worker/index.ts'
+        export default {
+          fetch(request, env, ctx) {
+            const AI = { async run(model, input) {
+              const response = await env.INFERENCE_FIXTURE.fetch('https://fixture.test/run', {
+                method: 'POST', body: JSON.stringify({ model, input }),
+              })
+              if (!response.ok) throw new Error('Inference failed')
+              return response.json()
+            } }
+            const EMAIL = { async send(message) {
+              const response = await env.MAIL_FIXTURE.fetch('https://fixture.test/email', { method: 'POST', body: JSON.stringify(message) })
+              if (!response.ok) throw new Error('Email delivery failed')
+              return response.json()
+            } }
+            return worker.fetch(request, { ...env, AI, EMAIL }, ctx)
+          },
+        }
+      `,
+    },
     outfile: bundle,
     bundle: true,
     format: 'esm',
@@ -78,7 +98,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   })
 
   const trace: TraceEntry[] = []
-  const openai = { mode: { kind: 'card', card: {} } as OpenAiMode, calls: 0 }
+  const inference = { mode: { kind: 'card', card: {} } as InferenceMode, calls: 0 }
   const sentEmails: Array<{ to: string; text: string }> = []
   const accessKey = makeAccessKey('test-key-1')
   const access = { keys: [accessKey], published: [accessKey], jwksFetches: 0 }
@@ -93,36 +113,34 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     r2Buckets: { CARD_IMAGES: 'e2e-images' },
     bindings: {
       SESSION_SECRET,
-      AI_EXTRACTOR: 'openai',
-      OPENAI_API_KEY: 'sk-test-not-real',
-      OPENAI_MODEL: 'test-model',
-      RESEND_API_KEY: 're_test_not_real',
+      AI_EXTRACTOR: 'cloudflare',
       SENDER_EMAIL: 'test@example.invalid',
       ...(options.access
         ? { AUTH_MODE: 'access', ACCESS_ISSUER, ACCESS_AUDIENCE, ACCESS_ALLOWED_HOSTS: ACCESS_HOSTS.join(',') }
         : {}),
     },
+    serviceBindings: {
+      MAIL_FIXTURE: async (request: Request) => {
+        const message = await request.json() as { to: string; text: string }
+        sentEmails.push({ to: message.to, text: message.text })
+        return MfResponse.json({ messageId: 'fixture-message' })
+      },
+      INFERENCE_FIXTURE: async (request: Request) => {
+        const { model, input } = await request.json() as { model: string; input: { messages: Array<{ content: unknown }> } }
+        if (!model.includes('llama-4-scout') || !JSON.stringify(input.messages).includes('data:image/')) {
+          return new MfResponse('Expected vision model and image input', { status: 400 })
+        }
+        inference.calls += 1
+        const mode = inference.mode
+        if (mode.kind === 'http-error') return new MfResponse(mode.body, { status: mode.status })
+        return MfResponse.json({ response: mode.kind === 'garbage' ? 'invalid JSON' : mode.card })
+      },
+    },
     outboundService: async (request: Request) => {
-      const url = new URL(request.url)
-      const body = request.method === 'GET' ? '' : await request.text()
-      if (url.hostname === RESEND_HOST) {
-        const payload = JSON.parse(body) as { to: string[]; text: string }
-        sentEmails.push({ to: payload.to[0], text: payload.text })
-        trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, status: 200, note: 'resend intercepted' })
-        return MfResponse.json({ id: 'email-test' })
-      }
       if (request.url === JWKS_URL) {
         access.jwksFetches += 1
         trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, status: 200, note: 'access jwks intercepted' })
         return MfResponse.json({ keys: access.published.map((k) => k.jwk) })
-      }
-      if (url.hostname === OPENAI_HOST) {
-        openai.calls += 1
-        const mode = openai.mode
-        trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, note: `openai intercepted (${mode.kind}); request body ${body.length} bytes` })
-        if (mode.kind === 'http-error') return new MfResponse(mode.body, { status: mode.status })
-        if (mode.kind === 'garbage') return MfResponse.json({ output_text: 'this is not json' })
-        return MfResponse.json({ output_text: JSON.stringify(mode.card) })
       }
       trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, status: 599, note: 'UNEXPECTED outbound host blocked' })
       return new MfResponse('blocked by e2e harness', { status: 599 })
@@ -170,7 +188,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   return {
     access: accessSim,
     mf,
-    openai,
+    inference,
     trace,
     anonymous: () => ({ email: '', cookie: '', request: (path, init) => send('', path, init) }),
     async signIn(email) {

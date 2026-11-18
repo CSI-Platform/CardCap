@@ -10,7 +10,7 @@ const uniqueEmail = () => `layout-${Date.now()}-${++counter}@example.test`
 
 async function signIn(page: Page, request: APIRequestContext) {
   const email = uniqueEmail()
-  await request.get('/__test/openai?mode=card')
+  await request.get('/__test/inference?mode=card')
   await page.goto('/')
   await page.getByRole('button', { name: 'Use email link' }).click()
   await page.getByPlaceholder('you@company.com').fill(email)
