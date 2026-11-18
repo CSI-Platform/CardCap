@@ -9,14 +9,33 @@ it('limits capture per account, returns an unsaved draft, and preserves its sour
   try {
     const db = await h.mf.getD1Database('DB')
     const alice = await h.signIn('capture@example.test')
-    const run = vi.fn(async () => ({ response: { company: 'Acme Studio', phones: ['480-555-0101'] } }))
+    let resume!: () => void
+    const waiting = new Promise<void>(resolve => { resume = resolve })
+    const run = vi.fn(async () => {
+      await waiting
+      return { response: { company: 'Acme Studio', phones: ['480-555-0101'] } }
+    })
     const env = { DB: db, SESSION_SECRET, AI: { run } } as unknown as Env
     const input = 'Acme Studio\n480-555-0101'
     const capture = (cookie: string) => worker.fetch(new Request('https://cardcap.test/api/contact-drafts', {
       method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ input }),
     }), env, { waitUntil() {} } as unknown as ExecutionContext)
     expect((await capture('')).status).toBe(401)
-    const response = await capture(alice.cookie)
+    const pending = capture(alice.cookie)
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+    try {
+      expect(await (await alice.request('/api/import-activity')).json()).toMatchObject({
+        processing: 1, errors: 0, recent: [{ label: 'Pasted text', state: 'processing' }],
+      })
+      const bob = await h.signIn('other@example.test')
+      expect(await (await bob.request('/api/import-activity')).json()).toEqual({ processing: 0, errors: 0, recent: [] })
+    } finally {
+      resume()
+    }
+    const response = await pending
+    expect(await (await alice.request('/api/import-activity')).json()).toMatchObject({
+      processing: 0, errors: 0, recent: [{ state: 'complete', detail: 'Contact detected for review' }],
+    })
     expect(response.status).toBe(200)
     const { contact } = await response.json() as { contact: Contact }
     expect(contact.source?.text).toBe(input)

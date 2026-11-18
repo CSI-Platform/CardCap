@@ -105,6 +105,13 @@ export async function ensureSchema(db: D1Database): Promise<void> {
         )`,
       ),
       db.prepare(
+        `CREATE TABLE IF NOT EXISTS import_activity (
+          id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), label TEXT NOT NULL,
+          state TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL
+        )`,
+      ),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_import_activity_user_time ON import_activity(user_id, started_at DESC)'),
+      db.prepare(
         `CREATE TABLE IF NOT EXISTS login_tokens (
           token_hash TEXT PRIMARY KEY,
           email TEXT NOT NULL,

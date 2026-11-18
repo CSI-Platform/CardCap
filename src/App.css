@@ -380,6 +380,30 @@ html { color-scheme: light dark; }
 .capture-form label { font-weight: 600; }
 .capture-form textarea { min-height: 64px; padding: 12px; border: var(--csi-border); border-radius: 6px; background: var(--csi-paper); color: var(--csi-ink); font: inherit; resize: vertical; }
 .capture-form .btn { justify-self: start; }
+
+.brand { color: inherit; text-decoration: none; }
+.dashboard { min-width: 0; margin-bottom: 44px; }
+.dashboard h2 { color: var(--csi-ink); font-size: clamp(32px, 4vw, 48px); line-height: 1.1; margin: 0 0 24px; }
+.dashboard h3 { color: var(--csi-ink); font-size: 20px; margin: 0 0 16px; }
+.dashboard-totals { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 28px; padding: 20px 0; border-block: var(--csi-border); gap: 16px; }
+.dashboard-totals dt, .import-list span, .import-list time { color: var(--csi-muted); }
+.dashboard-totals dd { font: 400 32px/1.2 var(--csi-mono); color: var(--csi-ink); margin: 4px 0 0; }
+.dashboard-sections { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: clamp(24px, 4vw, 64px); }
+.dashboard-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dashboard .capture-form { margin: 18px 0 0; }
+.import-list { list-style: none; margin: 0; padding: 0; }
+.import-list li { display: flex; justify-content: space-between; gap: 16px; border-bottom: var(--csi-border); padding: 10px 0; }
+.import-list li:first-child { padding-top: 0; }
+.import-list li div { display: grid; align-content: start; min-width: 0; gap: 2px; overflow-wrap: anywhere; }
+.import-list li div:last-child { text-align: right; flex-shrink: 0; }
+.import-list b { font-weight: 500; }
+.import-list time { font-size: 12px; }
+.import-failed { color: var(--csi-rose); }
+.import-processing { color: var(--csi-turquoise-deep); }
+@media (max-width: 760px) {
+  .dashboard-sections { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .capture-evidence { padding: 16px; min-width: 0; color: var(--csi-ink); }
 .capture-evidence small { display: block; margin-top: 6px; }
 .capture-evidence p { white-space: pre-wrap; overflow-wrap: anywhere; }

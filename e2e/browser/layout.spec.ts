@@ -38,25 +38,15 @@ async function uploadCard(page: Page) {
   await expect(page.getByRole('status')).toContainText('Cards added')
 }
 
-test('with no contacts there is one welcoming state and nothing else competing with it', async ({ page, request }) => {
+test('the empty dashboard offers all three capture actions', async ({ page, request }) => {
   await signIn(page, request)
-  await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
-  await expect(page.getByRole('heading')).toHaveCount(2) // the app name and the welcome
-  // No second empty message, no list tools, no editor, no photo panel.
-  await expect(page.getByText('Ready for your first batch')).toHaveCount(0)
-  await expect(page.getByText('No contacts yet')).toHaveCount(0)
-  await expect(page.getByRole('searchbox')).toHaveCount(0)
-  await expect(page.locator('.contact-row')).toHaveCount(0)
-  await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0)
-  await expect(page.getByRole('complementary', { name: 'Card photo' })).toHaveCount(0)
-  // The next action is obvious: Add cards is the one primary button; Import is secondary.
-  await expect(page.getByRole('banner').getByRole('button', { name: 'Add cards' })).toHaveClass(/primary/)
-  await expect(page.getByRole('banner').getByRole('button', { name: 'Import' })).not.toHaveClass(/primary/)
-  // Only one primary button on the whole screen: the header's Add cards. The welcome offers just the secondary Import.
-  await expect(page.locator('.btn.primary')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'Add cards' })).toHaveCount(1)
-  await expect(page.locator('.welcome-actions .btn')).toHaveText(['Import a file'])
-  await expect(page.getByRole('button', { name: 'Import a file' })).not.toHaveClass(/primary/)
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  await expect(page.getByText('No imports yet.')).toBeVisible()
+  await page.getByRole('button', { name: 'Add a domain' }).click()
+  await expect(page.getByLabel('Website domain')).toBeFocused()
+  await page.getByRole('button', { name: 'Paste an email signature' }).click()
+  await expect(page.getByLabel('Signature or business details')).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Upload business cards' })).toBeVisible()
 })
 
 test('export formats live in one Export menu and sign out lives in the Account menu', async ({ page, request }) => {
@@ -97,7 +87,7 @@ test('once there are contacts: search and list first; the editor and card photo 
   await page.reload()
 
   // List state.
-  await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
   await expect(page.getByRole('searchbox')).toBeVisible()
   await expect(page.locator('.contact-row')).toHaveCount(3)
   await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0)
@@ -139,7 +129,10 @@ test('desktop collection uses the workspace and a contact can return to the coll
   expect(collection?.width).toBeGreaterThan(1000)
   await page.locator('.contact-row', { hasText: 'Ada Lovelace' }).click()
   await expect(page.getByLabel('Name', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'All contacts', exact: true }).click()
+  await page.getByRole('link', { name: 'CardCap dashboard' }).click()
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  await expect(page.getByText('people.csv', { exact: true })).toBeVisible()
+  await expect(page.getByText('3 new, 0 merged')).toBeVisible()
   await expect(page.getByRole('searchbox')).toBeVisible()
   await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0)
   await expect(page.locator('.contact-row')).toHaveCount(3)
@@ -161,10 +154,10 @@ test('controls are compact with a mouse', async ({ page, request }) => {
 test.describe('on a phone: one task at a time', () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
 
-  test('the welcome Import a file picker accepts a card photo and opens it for review', async ({ page, request }) => {
+  test('the dashboard upload picker accepts a card photo and opens it for review', async ({ page, request }) => {
     await signIn(page, request)
     const chooserReady = page.waitForEvent('filechooser')
-    await page.getByRole('button', { name: 'Import a file', exact: true }).click()
+    await page.getByRole('button', { name: 'Upload business cards', exact: true }).click()
     const chooser = await chooserReady
     expect(await chooser.element().getAttribute('accept')).toContain('image/*')
     await chooser.setFiles({ name: 'business-card.png', mimeType: 'image/png', buffer: PNG_BUFFER })
