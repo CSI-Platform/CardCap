@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { LoginGate } from './components/LoginGate'
-import { Dashboard } from './components/Dashboard'
+import { Dashboard, type CaptureMode } from './components/Dashboard'
 import { Menu } from './components/Menu'
 import { SessionPanel, type SessionProblem } from './components/SessionPanel'
 import { SignOutConfirm } from './components/SignOutConfirm'
@@ -20,6 +20,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [captureInput, setCaptureInput] = useState('')
+  const [captureMode, setCaptureMode] = useState<CaptureMode>(null)
   const [capturing, setCapturing] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [userEmail, setUserEmail] = useState('')
@@ -290,6 +291,7 @@ function App() {
     setUserEmail('')
     setContacts([])
     setCaptureInput('')
+    setCaptureMode(null)
     setPasswordPanelOpen(false)
     setAccountPassword('')
     setAccountPasswordConfirm('')
@@ -330,7 +332,10 @@ function App() {
         contact: isPreview ? reviewedContact(draft) : draft,
       })
       setContacts((current) => sortContactsByName([...current.filter(contact => contact.id !== data.contact.id), data.contact]))
-      if (isPreview) setCaptureInput('')
+      if (isPreview) {
+        setCaptureInput('')
+        setCaptureMode(null)
+      }
       selectContact(data.contact)
       setNotice('Saved.')
     } catch (err) {
@@ -540,6 +545,7 @@ function App() {
 
           {view === 'list' && (
             <Dashboard key={userEmail} contacts={contacts.length} review={reviewCount} busy={busy} capturing={capturing}
+              mode={captureMode} onMode={setCaptureMode}
               input={captureInput} onInput={setCaptureInput} onCapture={() => void prepareContact()} onUpload={() => fileInput.current?.click()} />
           )}
 

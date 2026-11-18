@@ -47,6 +47,7 @@ test('reviewing and cancelling a website draft leaves the collection empty, savi
   await page.getByRole('button', { name: 'Review contact' }).click()
   await page.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
+  await expect(page.getByLabel('Website domain')).toHaveValue('example.com')
   await page.getByRole('button', { name: 'Review contact' }).click()
   await page.getByRole('button', { name: 'Save contact' }).click()
   await expect(page.getByRole('status')).toContainText('Saved')

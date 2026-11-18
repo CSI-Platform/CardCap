@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { apiGet } from '../lib/api'
 import type { DashboardActivity } from '../shared/types'
 
+export type CaptureMode = 'domain' | 'signature' | null
+
 type Props = {
   contacts: number
   review: number
   busy: boolean
   capturing: boolean
   input: string
+  mode: CaptureMode
+  onMode: (mode: CaptureMode) => void
   onInput: (value: string) => void
   onCapture: () => void
   onUpload: () => void
@@ -15,10 +19,9 @@ type Props = {
 
 const stateLabels = { complete: 'Complete', failed: 'Failed', processing: 'Processing' }
 
-export function Dashboard({ contacts, review, busy, capturing, input, onInput, onCapture, onUpload }: Props) {
+export function Dashboard({ contacts, review, busy, capturing, input, mode, onMode, onInput, onCapture, onUpload }: Props) {
   const [activity, setActivity] = useState<DashboardActivity | null>(null)
   const [unavailable, setUnavailable] = useState(false)
-  const [mode, setMode] = useState<'domain' | 'signature' | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     let cancelled = false
@@ -42,7 +45,7 @@ export function Dashboard({ contacts, review, busy, capturing, input, onInput, o
   }, [busy])
 
   function openCapture(next: 'domain' | 'signature') {
-    setMode(next)
+    onMode(next)
     requestAnimationFrame(() => field.current?.focus())
   }
 
