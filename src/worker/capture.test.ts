@@ -12,9 +12,10 @@ function bindings(fields: Record<string, unknown>) {
 
 describe('capture drafts', () => {
   it('follows the same-site contact link and retains the source and company-only identity', async () => {
-    const { env, quickAction } = bindings({ company: 'Acme Studio', phones: ['480-555-0101'], emails: ['invented@example.com'] })
+    const { env, quickAction } = bindings({ company: 'Acme Studio', phones: ['+1 480-555-0101'], emails: ['invented@example.com'] })
     const c = await captureContact('acmestudio.com', env)
     expect(quickAction.mock.calls.map(call => call[1].url)).toEqual(['https://acmestudio.com/', 'https://acmestudio.com/contact'])
+    expect(c.phones).toEqual(['+1 480-555-0101'])
     expect(c).toMatchObject({ name: '', company: 'Acme Studio', email: '', source: { url: 'https://acmestudio.com/contact', text: 'Acme Studio\n480-555-0101' } })
   })
   it('preserves a signed name and pasted evidence without looking up a website', async () => {

@@ -33,6 +33,10 @@ const contacts: Contact[] = [
 ]
 
 describe('contact exports', () => {
+  it('uses the company as the HTML heading for a company-only contact', () => {
+    expect(exportContactsHtml([{ ...contacts[0], name: '', company: 'Acme Studio' }])).toContain('<h2>Acme Studio</h2>')
+  })
+
   it('exports CSV with escaped comma-containing fields', () => {
     const csv = exportContactsCsv(contacts)
 

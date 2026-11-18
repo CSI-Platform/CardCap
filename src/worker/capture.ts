@@ -97,7 +97,8 @@ export async function captureContact(input: string, env: Env): Promise<Contact> 
   const digits = evidence.replace(/\D/g, '')
   const phones = fields.phones.filter(phone => {
     const number = phone.replace(/\D/g, '')
-    return number.length >= 6 && digits.includes(number)
+    const local = number.length === 11 && number.startsWith('1') ? number.slice(1) : number
+    return local.length >= 6 && digits.includes(local)
   })
   if (!name && !company && !email && !phones.length) throw new CaptureError('No contact details found. Include a signature or business details.')
   const now = new Date().toISOString()

@@ -1,4 +1,5 @@
 import type { Contact } from './types'
+import { contactDisplayName } from './contacts'
 import { normalizeContactTextFields } from './contact-normalization'
 
 const CSV_HEADERS = [
@@ -150,7 +151,7 @@ export function exportContactsHtml(contacts: Contact[]): string {
         : ''
       return `
         <article class="contact">
-          <h2>${html(contact.name)}</h2>
+          <h2>${html(contactDisplayName(contact))}</h2>
           <p>${html([contact.company, contact.role].filter(Boolean).join(' - '))}</p>
           <div class="links">
             ${contact.email ? `<a href="mailto:${html(contact.email)}">Email</a>` : ''}

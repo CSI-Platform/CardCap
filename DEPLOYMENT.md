@@ -8,7 +8,7 @@ Use this folder for future development, commits, and deploys. The earlier Codex 
 
 ## Live Beta
 
-- URL: `https://cardcap.codylecates.workers.dev`
+- URL: `https://cc.csi.run`
 - Worker name: `cardcap`
 - D1 database: `cardcap-db`
 - D1 database ID: `d3a74ece-fba4-4d92-a167-dfa21998c9ab`
@@ -76,7 +76,7 @@ npx cf auth login
 After deployment, verify:
 
 ```powershell
-Invoke-RestMethod -Uri 'https://cardcap.codylecates.workers.dev/api/health'
+Invoke-RestMethod -Uri 'https://cc.csi.run/api/health'
 ```
 
 Expected: JSON with `ok: true` and `extractor: cloudflare`.

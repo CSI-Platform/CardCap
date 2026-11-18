@@ -1,11 +1,14 @@
 import { bindings, defineConfig } from 'cf/config'
 
 const sender = 'cardcap@notify.copperstateit.com'
+const hostname = 'cc.csi.run'
 
 export default defineConfig({
   accountId: '584b3d4e1cb07efb65c315c7efcce589',
   worker: {
     name: 'cardcap',
+    domains: [hostname],
+    workersDev: true,
     entrypoint: './src/worker/index.ts',
     compatibilityDate: '2026-06-07',
     compatibilityFlags: ['nodejs_compat'],
@@ -19,6 +22,7 @@ export default defineConfig({
       BROWSER: bindings.browser({ dev: { remote: true } }),
       AI_EXTRACTOR: bindings.text('cloudflare'),
       SENDER_EMAIL: bindings.text(sender),
+      PUBLIC_ORIGIN: bindings.text(`https://${hostname}`),
       EMAIL: bindings.sendEmail({ allowedSenderAddresses: [sender] }),
       TURNSTILE_SITE_KEY: bindings.text('0x4AAAAAADix1GoVxjHxnCXP'),
       SESSION_SECRET: bindings.secret(),
