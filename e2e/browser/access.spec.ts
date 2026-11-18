@@ -42,10 +42,12 @@ test('reviewing and cancelling a website draft leaves the collection empty, savi
     extractionConfidence: 0.9, needsReview: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     source: { url, text: company + ' 480-555-0101', checkedAt: new Date().toISOString() },
   } } }))
-  await page.getByLabel('Paste a signature, business details, or a website').fill('example.com')
+  await page.getByRole('button', { name: 'Add a domain' }).click()
+  await page.getByLabel('Website domain').fill('example.com')
   await page.getByRole('button', { name: 'Review contact' }).click()
   await page.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
+  await expect(page.getByLabel('Website domain')).toHaveValue('example.com')
   await page.getByRole('button', { name: 'Review contact' }).click()
   await page.getByRole('button', { name: 'Save contact' }).click()
   await expect(page.getByRole('status')).toContainText('Saved')

@@ -1,5 +1,15 @@
 export type ContactStatus = 'New' | 'Follow up' | 'Active' | 'Archived'
 
+export type ImportActivity = {
+  id: string
+  label: string
+  state: 'processing' | 'failed' | 'complete'
+  detail: string
+  startedAt: string
+}
+
+export type DashboardActivity = { recent: ImportActivity[]; processing: number; errors: number }
+
 export type Contact = {
   id: string
   name: string

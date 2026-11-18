@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { LoginGate } from './components/LoginGate'
-import { CardArtwork } from './components/CardArtwork'
+import { Dashboard, type CaptureMode } from './components/Dashboard'
 import { Menu } from './components/Menu'
 import { SessionPanel, type SessionProblem } from './components/SessionPanel'
 import { SignOutConfirm } from './components/SignOutConfirm'
@@ -20,6 +20,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [captureInput, setCaptureInput] = useState('')
+  const [captureMode, setCaptureMode] = useState<CaptureMode>(null)
   const [capturing, setCapturing] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [userEmail, setUserEmail] = useState('')
@@ -180,8 +181,8 @@ function App() {
     setBusy(true)
     setError('')
     setNotice(`Uploading ${files.length} card${files.length === 1 ? '' : 's'}...`)
+    let lastContact: Contact | null = null
     try {
-      let lastContact: Contact | null = null
       let duplicateCount = 0
       for (const file of Array.from(files)) {
         const data = await apiUpload<{ contact: Contact; extractionMode: string; duplicate: { id: string; reasons: string[] } | null }>(
@@ -198,6 +199,7 @@ function App() {
           : 'Cards added. Review the extracted fields before follow-up.',
       )
     } catch (err) {
+      if (lastContact && !signedOutRef.current) await loadContacts()
       fail(err)
     } finally {
       setBusy(false)
@@ -289,6 +291,7 @@ function App() {
     setUserEmail('')
     setContacts([])
     setCaptureInput('')
+    setCaptureMode(null)
     setPasswordPanelOpen(false)
     setAccountPassword('')
     setAccountPasswordConfirm('')
@@ -329,7 +332,10 @@ function App() {
         contact: isPreview ? reviewedContact(draft) : draft,
       })
       setContacts((current) => sortContactsByName([...current.filter(contact => contact.id !== data.contact.id), data.contact]))
-      if (isPreview) setCaptureInput('')
+      if (isPreview) {
+        setCaptureInput('')
+        setCaptureMode(null)
+      }
       selectContact(data.contact)
       setNotice('Saved.')
     } catch (err) {
@@ -391,17 +397,25 @@ function App() {
 
   const isPreview = Boolean(draft?.source && !contacts.some(contact => contact.id === draft.id))
   const duplicate = isPreview && draft ? findDuplicateContact(draft, contacts) : null
-  const view = draft ? 'edit' : contacts.length ? 'list' : loading ? 'loading' : 'empty'
+  const view = draft ? 'edit' : loading && !contacts.length ? 'loading' : 'list'
 
   return (
     <div className={`app-shell${authRequired ? ' signed-out' : ''}`}>
       <a className="skip-link" href="#main">
-        Skip to contacts
+        Skip to main content
       </a>
       <div className="app-content" aria-busy={loading}>
       <div className="brand-bar" aria-hidden="true" />
       <header className="topbar">
-        <div className="brand">
+        <a className="brand" href="/" aria-label="CardCap dashboard" onClick={event => {
+          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+          event.preventDefault()
+          selectContact(null)
+          setQuery('')
+          setStatusFilter('')
+          setPasswordPanelOpen(false)
+          window.scrollTo(0, 0)
+        }}>
           <picture>
             <source srcSet="/brand/csi-monogram-dark.svg" media="(prefers-color-scheme: dark)" />
             <img className="brand-mark" src="/brand/csi-monogram-light.svg" alt="" width="36" height="36" />
@@ -410,7 +424,7 @@ function App() {
             <span className="brand-org">Copper State Intelligence</span>
             <h1>CardCap</h1>
           </div>
-        </div>
+        </a>
         {!authRequired && (
           <div className="toolbar">
             <button className="btn primary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
@@ -529,48 +543,13 @@ function App() {
         <main className={`workspace view-${view}${photoTab ? ' show-photo' : ''}`} id="main" tabIndex={-1}>
           {view === 'loading' && <div className="empty">Loading contacts...</div>}
 
-          {(view === 'empty' || view === 'list') && (
-            <form className="capture-form" onSubmit={event => { event.preventDefault(); void prepareContact() }}>
-              <label htmlFor="contact-capture">Paste a signature, business details, or a website</label>
-              <textarea id="contact-capture" value={captureInput} maxLength={12000} rows={2} disabled={busy}
-                placeholder="Business details or example.com" onChange={event => setCaptureInput(event.currentTarget.value)} />
-              <button className="btn" disabled={busy || !captureInput.trim()}>
-                {capturing ? 'Finding contact details…' : 'Review contact'}
-              </button>
-            </form>
-          )}
-
-          {view === 'empty' && (
-            <section className="welcome" aria-labelledby="welcome-title">
-              <CardArtwork />
-              <div className="welcome-copy">
-                <h2 id="welcome-title">Add your first business cards</h2>
-                <p>Take a photo with Add cards, or import a card image. Review the details, then keep every contact here.</p>
-              </div>
-              <ol className="welcome-steps">
-                <li>
-                  <strong>Add</strong>
-                  <span>Take a photo or upload</span>
-                </li>
-                <li>
-                  <strong>Review</strong>
-                  <span>Check the contact details</span>
-                </li>
-                <li>
-                  <strong>Export</strong>
-                  <span>Take your contacts with you</span>
-                </li>
-              </ol>
-              <div className="welcome-actions">
-                <span>Card photos, CSV, vCard or JSON</span>
-                <button className="btn" type="button" onClick={() => importInput.current?.click()} disabled={busy}>
-                  Import a file
-                </button>
-              </div>
-            </section>
-          )}
-
           {view === 'list' && (
+            <Dashboard key={userEmail} contacts={contacts.length} review={reviewCount} busy={busy} capturing={capturing}
+              mode={captureMode} onMode={setCaptureMode}
+              input={captureInput} onInput={setCaptureInput} onCapture={() => void prepareContact()} onUpload={() => fileInput.current?.click()} />
+          )}
+
+          {view === 'list' && contacts.length > 0 && (
             <div className="collection-heading">
               <div>
                 <h2>Contacts <span className="collection-count" aria-hidden="true">{contacts.length}</span></h2>
@@ -580,7 +559,7 @@ function App() {
             </div>
           )}
 
-          {(view === 'list' || view === 'edit') && (
+          {((view === 'list' && contacts.length > 0) || view === 'edit') && (
             <aside className="sidebar" aria-label="Contacts">
               <div className="filters">
                 <label>

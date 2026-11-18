@@ -22,6 +22,7 @@ import {
   verifyLogin,
 } from './auth'
 import { extractCard } from './extract'
+import { readActivity, trackImport } from './import-activity'
 import { captureContact, CaptureError, publicWebsite } from './capture'
 import { accessIdentity, authenticationMode, resolveAccessUser, AccessAccountConflictError, AccessConfigurationError } from './access'
 import {
@@ -121,6 +122,10 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ contacts: sortContactsByName(await listContacts(env.DB, user.id)) })
   }
 
+  if (request.method === 'GET' && url.pathname === '/api/import-activity') {
+    return json(await readActivity(env.DB, user.id))
+  }
+
   if (request.method === 'POST' && url.pathname === '/api/contacts') {
     const contact = contactFromJson(await request.json())
     if (contact.sourceImageKey && !(await ownsImageKey(env.DB, user.id, contact.sourceImageKey))) {
@@ -138,7 +143,9 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (!(await allowed(rateLimiter(env, 'RL_UPLOAD'), user.id)) || !(await reserveCapture(env.DB, user.id))) {
       return json({ error: 'Capture limit reached. Try again later.' }, 429)
     }
-    const contact = await captureContact(input, env)
+    const contact = await trackImport(env.DB, user.id, publicWebsite(input)?.hostname || 'Pasted text', async () => ({
+      value: await captureContact(input, env), detail: 'Contact detected for review',
+    }))
     return json({ contact })
   }
 
@@ -230,6 +237,10 @@ async function uploadCard(request: Request, env: Env, userId: string): Promise<R
     return json({ error: 'file must be an image' }, 400)
   }
 
+  return trackImport(env.DB, userId, file.name || 'Business card', () => processCard(file, env, userId))
+}
+
+async function processCard(file: File, env: Env, userId: string) {
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
   const bytes = await file.arrayBuffer()
@@ -249,7 +260,7 @@ async function uploadCard(request: Request, env: Env, userId: string): Promise<R
     })
   } catch {
     await env.CARD_IMAGES.delete(key)
-    return json({ error: 'Unable to extract this card. Please try again.' }, 502)
+    throw new CaptureError('Unable to extract this card. Please try again.', 502)
   }
 
   const contact: Contact = {
@@ -300,7 +311,7 @@ async function uploadCard(request: Request, env: Env, userId: string): Promise<R
     userId,
   )
 
-  return json(
+  const value = json(
     {
       contact: saved,
       extractionMode: extraction.mode,
@@ -308,6 +319,7 @@ async function uploadCard(request: Request, env: Env, userId: string): Promise<R
     },
     duplicate ? 200 : 201,
   )
+  return { value, detail: duplicate ? 'Duplicate merged' : 'Card added for review' }
 }
 
 async function importContacts(request: Request, env: Env, userId: string): Promise<Response> {
@@ -317,6 +329,10 @@ async function importContacts(request: Request, env: Env, userId: string): Promi
     return json({ error: 'file is required' }, 400)
   }
 
+  return trackImport(env.DB, userId, file.name || 'Contacts file', () => processImportFile(file, env, userId))
+}
+
+async function processImportFile(file: File, env: Env, userId: string) {
   const parsed = parseContactsImport(file.name || 'contacts.csv', await file.text())
   const now = new Date().toISOString()
   const knownContacts = await listContacts(env.DB, userId)
@@ -339,7 +355,7 @@ async function importContacts(request: Request, env: Env, userId: string): Promi
     created += 1
   }
 
-  return json({
+  const value = json({
     format: parsed.format,
     imported: parsed.contacts.length,
     created,
@@ -347,6 +363,7 @@ async function importContacts(request: Request, env: Env, userId: string): Promi
     skipped: Math.max(0, parsed.contacts.length - created - merged),
     contacts: sortContactsByName(savedContacts),
   })
+  return { value, detail: `${created} new, ${merged} merged` }
 }
 
 async function getImage(env: Env, key: string, userId: string): Promise<Response> {

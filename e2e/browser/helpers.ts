@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test'
 
-export const WELCOME_HEADING = 'Add your first business cards'
+export const WELCOME_HEADING = 'Dashboard'
 
 /** Open the Export or Account menu and press one of its items. */
 export async function chooseFromMenu(page: Page, menu: 'Export' | 'Account', item: string) {

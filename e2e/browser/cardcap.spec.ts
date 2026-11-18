@@ -107,6 +107,11 @@ test('a failed extraction shows a safe message, leaves nothing behind, and a ret
   await expect(banner).not.toContainText('OpenAI')
   expect(await r2Keys(request)).toEqual(r2Before)
   await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
+  await page.reload()
+  const activity = page.getByRole('region', { name: 'Recent imports' })
+  await expect(activity).toContainText('maria-card.png')
+  await expect(activity).toContainText('Failed')
+  await expect(activity).toContainText('Unable to extract this card.')
 
   await request.get('/__test/inference?mode=card')
   await uploadCard(page)
