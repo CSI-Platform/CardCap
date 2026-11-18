@@ -1,5 +1,5 @@
 AI_EXTRACTOR=mock
 
-# Auth (local dev: leave SESSION_SECRET unset to auto-login as the local user)
+# Set a local session secret to enable sign-in.
 SESSION_SECRET=
 TURNSTILE_SECRET_KEY=
