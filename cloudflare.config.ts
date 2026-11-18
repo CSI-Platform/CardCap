@@ -1,5 +1,7 @@
 import { bindings, defineConfig } from 'cf/config'
 
+const sender = 'cardcap@notify.copperstateit.com'
+
 export default defineConfig({
   accountId: '584b3d4e1cb07efb65c315c7efcce589',
   worker: {
@@ -16,9 +18,9 @@ export default defineConfig({
       AI: bindings.ai({ dev: { remote: true } }),
       BROWSER: bindings.browser({ dev: { remote: true } }),
       AI_EXTRACTOR: bindings.text('cloudflare'),
-      SENDER_EMAIL: bindings.text('cody@copperstateit.com'),
+      SENDER_EMAIL: bindings.text(sender),
+      EMAIL: bindings.sendEmail({ allowedSenderAddresses: [sender] }),
       TURNSTILE_SITE_KEY: bindings.text('0x4AAAAAADix1GoVxjHxnCXP'),
-      RESEND_API_KEY: bindings.secret(),
       SESSION_SECRET: bindings.secret(),
       TURNSTILE_SECRET_KEY: bindings.secret(),
       // CF's D1 CLI reads ./migrations by default.

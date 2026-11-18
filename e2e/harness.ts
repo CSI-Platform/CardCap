@@ -14,7 +14,6 @@ const here = dirname(fileURLToPath(import.meta.url))
 // Inference and outbound mail are intercepted: nothing leaves the machine and no paid AI call is made.
 
 export const SESSION_SECRET = 'e2e-session-secret-not-real'
-export const RESEND_HOST = 'api.resend.com'
 
 export type InferenceMode =
   | { kind: 'card'; card: Record<string, unknown> }
@@ -78,7 +77,12 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
               if (!response.ok) throw new Error('Inference failed')
               return response.json()
             } }
-            return worker.fetch(request, { ...env, AI }, ctx)
+            const EMAIL = { async send(message) {
+              const response = await env.MAIL_FIXTURE.fetch('https://fixture.test/email', { method: 'POST', body: JSON.stringify(message) })
+              if (!response.ok) throw new Error('Email delivery failed')
+              return response.json()
+            } }
+            return worker.fetch(request, { ...env, AI, EMAIL }, ctx)
           },
         }
       `,
@@ -110,13 +114,17 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     bindings: {
       SESSION_SECRET,
       AI_EXTRACTOR: 'cloudflare',
-      RESEND_API_KEY: 're_test_not_real',
       SENDER_EMAIL: 'test@example.invalid',
       ...(options.access
         ? { AUTH_MODE: 'access', ACCESS_ISSUER, ACCESS_AUDIENCE, ACCESS_ALLOWED_HOSTS: ACCESS_HOSTS.join(',') }
         : {}),
     },
     serviceBindings: {
+      MAIL_FIXTURE: async (request: Request) => {
+        const message = await request.json() as { to: string; text: string }
+        sentEmails.push({ to: message.to, text: message.text })
+        return MfResponse.json({ messageId: 'fixture-message' })
+      },
       INFERENCE_FIXTURE: async (request: Request) => {
         const { model, input } = await request.json() as { model: string; input: { messages: Array<{ content: unknown }> } }
         if (!model.includes('llama-4-scout') || !JSON.stringify(input.messages).includes('data:image/')) {
@@ -129,14 +137,6 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
       },
     },
     outboundService: async (request: Request) => {
-      const url = new URL(request.url)
-      const body = request.method === 'GET' ? '' : await request.text()
-      if (url.hostname === RESEND_HOST) {
-        const payload = JSON.parse(body) as { to: string[]; text: string }
-        sentEmails.push({ to: payload.to[0], text: payload.text })
-        trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, status: 200, note: 'resend intercepted' })
-        return MfResponse.json({ id: 'email-test' })
-      }
       if (request.url === JWKS_URL) {
         access.jwksFetches += 1
         trace.push({ at: new Date().toISOString(), kind: 'outbound', method: request.method, url: request.url, status: 200, note: 'access jwks intercepted' })

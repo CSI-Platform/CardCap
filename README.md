@@ -50,7 +50,7 @@ Sign in with `npx cf auth login`. The Worker uses the remote AI binding for phot
 ## Auth in Local Dev
 
 - Leave `SESSION_SECRET` unset in `.dev.vars` to auto-sign-in as the local user (no email needed).
-- Set `SESSION_SECRET` to any 32+ character string to exercise the real magic-link flow; with no `RESEND_API_KEY`, the sign-in link is printed to the dev-server console instead of emailed.
+- Set `SESSION_SECRET` to any 32+ character string to exercise the real magic-link flow. Sign-in links use the Cloudflare EMAIL binding.
 - `TURNSTILE_SECRET_KEY` unset means the Turnstile check is skipped locally.
 
 ## Production deployment

@@ -4,7 +4,7 @@ import { PNG_BUFFER, PNG_HEIGHT, PNG_WIDTH } from '../fixtures'
 import { chooseFromMenu, openContact, WELCOME_HEADING } from './helpers'
 
 // Real Chromium against the built SPA + the real Worker on local Miniflare (see e2e/browser/server.ts).
-// OpenAI/Resend are intercepted by the server; data is synthetic.
+// Cloudflare inference and email are intercepted by the server; data is synthetic.
 
 const UPSTREAM_SECRET = 'upstream-internal-detail-abc123'
 
