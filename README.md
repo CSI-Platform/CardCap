@@ -40,7 +40,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5173/api/health
 npm run lint
 npm test
 npm run build
-npx wrangler deploy --dry-run
+npm run deploy -- --dry-run
 ```
 
 ## Turn On OpenAI Extraction Locally
@@ -61,28 +61,11 @@ Restart the dev server after changing `.dev.vars`.
 - Set `SESSION_SECRET` to any 32+ character string to exercise the real magic-link flow; with no `RESEND_API_KEY`, the sign-in link is printed to the dev-server console instead of emailed.
 - `TURNSTILE_SECRET_KEY` unset means the Turnstile check is skipped locally.
 
-## Cloudflare Setup Later
+## Production deployment
 
-Cloudflare can host the frontend, Worker API, database, and image storage for this version. No Supabase is needed for the first SaaS cut.
-
-When you are ready to deploy:
+The `cardcap` Cloudflare Worker serves the app and API. Its production bindings are defined in `cloudflare.config.ts`. Contacts use D1 and photos use R2. The D1 CLI uses the existing `./migrations` directory.
 
 ```powershell
-npx wrangler login
-npx wrangler d1 create cardcap-local
-npx wrangler r2 bucket create cardcap-card-images
-npx wrangler d1 migrations apply cardcap-local --remote
-npx wrangler secret put OPENAI_API_KEY
+npm run deploy -- --dry-run
+npm run deploy
 ```
-
-After `d1 create`, replace the placeholder `database_id` in `wrangler.jsonc`. For production AI extraction, change `AI_EXTRACTOR` from `mock` to `openai` in `wrangler.jsonc`, then deploy:
-
-```powershell
-npm run build
-npx wrangler deploy
-```
-
-## Current Production Gaps
-
-- Magic-link auth is implemented but not yet deployed: production still needs `SESSION_SECRET`, `RESEND_API_KEY`, and Turnstile keys (see DEPLOYMENT.md).
-- The deployed database still holds pre-auth beta data; the deploy sequence snapshots then wipes it (fresh start).
