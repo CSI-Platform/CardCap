@@ -22,10 +22,12 @@ import {
   verifyLogin,
 } from './auth'
 import { extractCard } from './extract'
+import { captureContact, CaptureError, publicWebsite } from './capture'
 import { accessIdentity, authenticationMode, resolveAccessUser, AccessAccountConflictError, AccessConfigurationError } from './access'
 import {
   ContactConflictError,
   countExtractionJobsSince,
+  reserveCapture,
   deleteContact,
   getContact,
   listContacts,
@@ -48,6 +50,7 @@ export default {
       ctx.waitUntil(Promise.resolve())
       return response
     } catch (error) {
+      if (error instanceof CaptureError) return json({ error: error.message }, error.status)
       if (error instanceof AccessConfigurationError) return json({ error: 'Sign-in is temporarily unavailable.' }, 503)
       if (error instanceof AccessAccountConflictError) return json({ error: 'Account access requires review.' }, 403)
       if (error instanceof ContactConflictError) return json({ error: 'Contact id is not available' }, 409)
@@ -124,6 +127,19 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
       return json({ error: 'Image not found' }, 404)
     }
     return json({ contact: await saveContact(env.DB, contact, user.id) }, 201)
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/contact-drafts') {
+    if (!request.headers.get('content-type')?.includes('application/json')) return json({ error: 'Expected JSON.' }, 415)
+    if (Number(request.headers.get('content-length')) > 64000) return json({ error: 'Paste a shorter excerpt.' }, 413)
+    const payload: unknown = await request.json().catch(() => null)
+    const input = isObject(payload) ? text(payload.input) : ''
+    if (!input || input.length > 12000) return json({ error: 'Enter between 1 and 12,000 characters.' }, 400)
+    if (!(await allowed(rateLimiter(env, 'RL_UPLOAD'), user.id)) || !(await reserveCapture(env.DB, user.id))) {
+      return json({ error: 'Capture limit reached. Try again later.' }, 429)
+    }
+    const contact = await captureContact(input, env)
+    return json({ contact })
   }
 
   const contactMatch = url.pathname.match(/^\/api\/contacts\/([^/]+)$/)
@@ -278,7 +294,7 @@ async function uploadCard(request: Request, env: Env, userId: string): Promise<R
       id: crypto.randomUUID(),
       contactId: saved.id,
       sourceImageKey: saved.sourceImageKey || key,
-      status: duplicate ? 'duplicate' : extraction.mode === 'openai' ? 'extracted' : 'mocked',
+      status: duplicate ? 'duplicate' : extraction.mode === 'cloudflare' ? 'extracted' : 'mocked',
       rawExtractionJson: JSON.stringify(extraction.raw),
     },
     userId,
@@ -352,6 +368,7 @@ function contactFromJson(payload: unknown, existing?: Contact, forcedId?: string
   const value = isObject(input) ? input : {}
   const now = new Date().toISOString()
   const createdAt = text(value.createdAt) || existing?.createdAt || now
+  const source = isObject(value.source) ? value.source : null
   return {
     id: forcedId || text(value.id) || existing?.id || crypto.randomUUID(),
     name: text(value.name),
@@ -366,6 +383,11 @@ function contactFromJson(payload: unknown, existing?: Contact, forcedId?: string
     nextStep: text(value.nextStep),
     status: contactStatus(text(value.status)),
     sourceImageKey: text(value.sourceImageKey) || existing?.sourceImageKey || '',
+    source: source ? {
+      text: text(source.text).slice(0, 12000),
+      url: publicWebsite(text(source.url))?.href || '',
+      checkedAt: Number.isFinite(Date.parse(text(source.checkedAt))) ? new Date(text(source.checkedAt)).toISOString() : now,
+    } : existing?.source,
     extractionConfidence: number(value.extractionConfidence, existing?.extractionConfidence || 0),
     needsReview: boolean(value.needsReview, existing?.needsReview || false),
     createdAt,
@@ -388,6 +410,7 @@ function withoutImageUrl(contact: Contact): Omit<Contact, 'sourceImageUrl'> {
     nextStep: contact.nextStep,
     status: contact.status,
     sourceImageKey: contact.sourceImageKey,
+    source: contact.source,
     extractionConfidence: contact.extractionConfidence,
     needsReview: contact.needsReview,
     createdAt: contact.createdAt,

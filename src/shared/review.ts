@@ -3,7 +3,7 @@ import type { Contact } from './types'
 export function contactNeedsReview(contact: Contact): boolean {
   return (
     contact.needsReview ||
-    !contact.name.trim() ||
+    (!contact.name.trim() && !contact.company.trim()) ||
     contact.nextStep.toLowerCase().includes('review') ||
     (contact.status === 'Follow up' && contact.extractionConfidence < 0.9)
   )

@@ -29,7 +29,32 @@ async function upload(page: Page) {
 }
 
 test.beforeEach(async ({ request }) => {
-  await request.get('/__test/openai?mode=card')
+  await request.get('/__test/inference?mode=card')
+})
+
+test('reviewing and cancelling a website draft leaves the collection empty, saving retains its source', async ({ page }) => {
+  await openApp(page, uniqueEmail('capture'))
+  const company = 'Example Landscape'
+  const url = 'https://example.com/contact'
+  await page.route('**/api/contact-drafts', route => route.fulfill({ json: { contact: {
+    id: crypto.randomUUID(), name: '', company, role: '', email: '', phones: ['480-555-0101'], address: '', website: 'https://example.com',
+    tags: [], notes: '', status: 'New', nextStep: '', sourceImageKey: '', sourceImageUrl: '',
+    extractionConfidence: 0.9, needsReview: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    source: { url, text: company + ' 480-555-0101', checkedAt: new Date().toISOString() },
+  } } }))
+  await page.getByLabel('Paste a signature, business details, or a website').fill('example.com')
+  await page.getByRole('button', { name: 'Review contact' }).click()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
+  await page.getByRole('button', { name: 'Review contact' }).click()
+  await page.getByRole('button', { name: 'Save contact' }).click()
+  await expect(page.getByRole('status')).toContainText('Saved')
+  await page.reload()
+  await openContact(page, company)
+  await expect(page.getByRole('link', { name: 'View source page' })).toHaveAttribute('href', url)
+  const csv = await (await page.request.get('/api/export.csv')).text()
+  expect(csv).toContain(company)
+  expect(csv).toContain(url)
 })
 
 test('first visit goes through the edge, returns to the same address, and shows no CardCap sign-in or password screens', async ({ page, baseURL }) => {

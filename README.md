@@ -12,7 +12,7 @@ Phone-first business card capture for turning card photos into a searchable mini
 - Review the source card beside or above editable contact fields.
 - Save searchable contacts with email, phone, website, map, notes, tags, status, and next step.
 - Export CSV, vCard, JSON, standalone HTML, or an iContact-ready CSV for email-marketing imports.
-- Run AI extraction in mock mode locally, or switch to OpenAI with an API key.
+- Extract card photos with Cloudflare Workers AI, or use mock photo extraction locally. Paste a signature, business details, or a website to review and save a contact.
 - Abuse guards: Turnstile on sign-in, per-minute rate limits, and a 25-cards/day extraction quota per user.
 
 ## Local Development
@@ -43,17 +43,9 @@ npm run build
 npm run deploy -- --dry-run
 ```
 
-## Turn On OpenAI Extraction Locally
+## Cloudflare extraction in development
 
-Copy `.dev.vars.example` to `.dev.vars`, then set:
-
-```text
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-5-mini
-AI_EXTRACTOR=openai
-```
-
-Restart the dev server after changing `.dev.vars`.
+Sign in with `npx cf auth login`. The Worker uses the remote AI binding for photo and text extraction and the Browser Run binding for website lookup. Set `AI_EXTRACTOR=cloudflare` in `.dev.vars` for live photo extraction or `AI_EXTRACTOR=mock` for local photo fixtures.
 
 ## Auth in Local Dev
 

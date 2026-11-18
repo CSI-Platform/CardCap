@@ -376,3 +376,11 @@ html { color-scheme: light dark; }
 @media (prefers-reduced-motion: reduce) {
   .app-shell *, .app-shell *::before, .app-shell *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+.capture-form { display: grid; gap: 10px; width: 100%; max-width: 760px; margin-bottom: 28px; }
+.capture-form label { font-weight: 600; }
+.capture-form textarea { min-height: 64px; padding: 12px; border: var(--csi-border); border-radius: 6px; background: var(--csi-paper); color: var(--csi-ink); font: inherit; resize: vertical; }
+.capture-form .btn { justify-self: start; }
+.capture-evidence { padding: 16px; min-width: 0; color: var(--csi-ink); }
+.capture-evidence small { display: block; margin-top: 6px; }
+.capture-evidence p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.capture-match { flex-basis: 100%; }

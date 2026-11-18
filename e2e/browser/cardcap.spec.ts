@@ -37,7 +37,7 @@ async function downloadText(page: Page, itemName: string): Promise<{ text: strin
 }
 
 test.beforeEach(async ({ request }) => {
-  await request.get('/__test/openai?mode=card')
+  await request.get('/__test/inference?mode=card')
 })
 
 test('upload → review/edit → save → reload → export keeps exactly the corrected values', async ({ page, request }) => {
@@ -99,7 +99,7 @@ test('a failed extraction shows a safe message, leaves nothing behind, and a ret
   await signIn(page, request, uniqueEmail('alice'))
   const r2Before = await r2Keys(request)
 
-  await request.get('/__test/openai?mode=error')
+  await request.get('/__test/inference?mode=error')
   await uploadCard(page)
   const banner = page.locator('.banner.error')
   await expect(banner).toBeVisible()
@@ -108,7 +108,7 @@ test('a failed extraction shows a safe message, leaves nothing behind, and a ret
   expect(await r2Keys(request)).toEqual(r2Before)
   await expect(page.getByRole('heading', { name: WELCOME_HEADING })).toBeVisible()
 
-  await request.get('/__test/openai?mode=card')
+  await request.get('/__test/inference?mode=card')
   await uploadCard(page)
   await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Maria Okafor')
   expect((await r2Keys(request)).length).toBe(r2Before.length + 1)

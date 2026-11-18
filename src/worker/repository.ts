@@ -1,5 +1,6 @@
 import type { Contact, ContactStatus } from '../shared/types'
 import { normalizeContactTextFields } from '../shared/contact-normalization'
+import { DAILY_EXTRACTION_LIMIT, utcDayStartIso } from '../shared/quota'
 
 const LOCAL_USER_ID = 'local-user'
 
@@ -18,6 +19,7 @@ type ContactRow = {
   next_step: string
   status: string
   source_image_key: string
+  capture_source: string
   extraction_confidence: number
   needs_review: number
   created_at: string
@@ -93,6 +95,16 @@ export async function ensureSchema(db: D1Database): Promise<void> {
         )`,
       ),
       db.prepare(
+        `CREATE TABLE IF NOT EXISTS contact_sources (
+          contact_id TEXT PRIMARY KEY REFERENCES contacts(id) ON DELETE CASCADE, capture_source TEXT NOT NULL
+        )`,
+      ),
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS capture_usage (
+          user_id TEXT NOT NULL, day TEXT NOT NULL, attempts INTEGER NOT NULL, PRIMARY KEY (user_id, day)
+        )`,
+      ),
+      db.prepare(
         `CREATE TABLE IF NOT EXISTS login_tokens (
           token_hash TEXT PRIMARY KEY,
           email TEXT NOT NULL,
@@ -113,7 +125,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
        WHERE needs_review = 0
          AND (
            lower(next_step) LIKE '%review%'
-           OR name = ''
+           OR (name = '' AND company = '')
            OR (status = 'Follow up' AND extraction_confidence < 0.9)
          )`,
     )
@@ -130,7 +142,7 @@ export function localUserId(): string {
 export async function listContacts(db: D1Database, userId = LOCAL_USER_ID): Promise<Contact[]> {
   await ensureSchema(db)
   const result = await db
-    .prepare('SELECT * FROM contacts WHERE user_id = ? ORDER BY updated_at DESC')
+    .prepare('SELECT * FROM contacts LEFT JOIN contact_sources ON contact_id = id WHERE user_id = ? ORDER BY updated_at DESC')
     .bind(userId)
     .all<ContactRow>()
   return (result.results || []).map(rowToContact)
@@ -139,7 +151,7 @@ export async function listContacts(db: D1Database, userId = LOCAL_USER_ID): Prom
 export async function getContact(db: D1Database, id: string, userId = LOCAL_USER_ID): Promise<Contact | null> {
   await ensureSchema(db)
   const row = await db
-    .prepare('SELECT * FROM contacts WHERE id = ? AND user_id = ?')
+    .prepare('SELECT * FROM contacts LEFT JOIN contact_sources ON contact_id = id WHERE id = ? AND user_id = ?')
     .bind(id, userId)
     .first<ContactRow>()
   return row ? rowToContact(row) : null
@@ -165,7 +177,7 @@ export async function saveContact(db: D1Database, contact: ContactWrite, userId 
   await ensureSchema(db)
   await ensureUser(db, userId)
   const normalizedContact = normalizeContactTextFields(contact)
-  const result = await db
+  const write = db
     .prepare(
       `INSERT INTO contacts (
         id, user_id, name, company, role, email, phones_json, website, address,
@@ -210,7 +222,14 @@ export async function saveContact(db: D1Database, contact: ContactWrite, userId 
       normalizedContact.createdAt,
       normalizedContact.updatedAt,
     )
-    .run()
+  const source = normalizedContact.source
+  const result = source ? (await db.batch([
+    write,
+    db.prepare(`INSERT INTO contact_sources(contact_id, capture_source)
+      SELECT id, ? FROM contacts WHERE id = ? AND user_id = ?
+      ON CONFLICT(contact_id) DO UPDATE SET capture_source = excluded.capture_source`)
+      .bind(JSON.stringify(source), normalizedContact.id, userId),
+  ]))[0] : await write.run()
   if (result.meta.changes === 0) throw new ContactConflictError()
   return { ...normalizedContact, sourceImageUrl: imageUrl(normalizedContact.sourceImageKey) }
 }
@@ -277,6 +296,7 @@ export function rowToContact(row: ContactRow): Contact {
     status: status(row.status),
     sourceImageKey: row.source_image_key,
     sourceImageUrl: imageUrl(row.source_image_key),
+    ...(row.capture_source ? { source: JSON.parse(row.capture_source) as Contact['source'] } : {}),
     extractionConfidence: row.extraction_confidence,
     needsReview: Boolean(row.needs_review),
     createdAt: row.created_at,
@@ -386,10 +406,23 @@ function emailFromUserId(userId: string): string {
 export async function countExtractionJobsSince(db: D1Database, userId: string, sinceIso: string): Promise<number> {
   await ensureSchema(db)
   const row = await db
-    .prepare('SELECT COUNT(*) AS total FROM extraction_jobs WHERE user_id = ? AND created_at >= ?')
-    .bind(userId, sinceIso)
+    .prepare(`SELECT COUNT(*) + COALESCE((SELECT attempts FROM capture_usage WHERE user_id = ? AND day = ?), 0)
+      AS total FROM extraction_jobs WHERE user_id = ? AND created_at >= ?`)
+    .bind(userId, sinceIso, userId, sinceIso)
     .first<{ total: number }>()
   return row?.total ?? 0
+}
+
+export async function reserveCapture(db: D1Database, userId: string): Promise<boolean> {
+  await ensureSchema(db)
+  const day = utcDayStartIso()
+  const result = await db.prepare(`INSERT INTO capture_usage(user_id, day, attempts)
+    SELECT ?1, ?2, 1 WHERE
+      (SELECT COUNT(*) FROM extraction_jobs WHERE user_id = ?1 AND created_at >= ?2)
+      + COALESCE((SELECT attempts FROM capture_usage WHERE user_id = ?1 AND day = ?2), 0) < ?3
+    ON CONFLICT(user_id, day) DO UPDATE SET attempts = attempts + 1`)
+    .bind(userId, day, DAILY_EXTRACTION_LIMIT).run()
+  return result.meta.changes === 1
 }
 
 export async function createLoginToken(db: D1Database, tokenHash: string, email: string, expiresAt: string): Promise<void> {

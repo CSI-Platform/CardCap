@@ -22,7 +22,7 @@ async function main() {
     const [email, seen] = decodeURIComponent(simCookie(req) || '').split('|')
     return email && Number(seen) === epoch ? email : ''
   }
-  h.openai.mode = {
+  h.inference.mode = {
     kind: 'card',
     card: {
       name: 'Maria Okafor', company: 'Sunrise Realty Group', role: 'Broker', emails: ['maria@sunrise.example'],
@@ -67,11 +67,11 @@ async function main() {
         res.writeHead(link ? 200 : 404, { 'content-type': 'text/plain' }).end(link ? new URL(link).pathname + new URL(link).search : '')
         return
       }
-      if (url.pathname === '/__test/openai') {
+      if (url.pathname === '/__test/inference') {
         const kind = url.searchParams.get('mode')
-        if (kind === 'error') h.openai.mode = { kind: 'http-error', status: 500, body: 'upstream-internal-detail-abc123' }
-        else if (kind === 'garbage') h.openai.mode = { kind: 'garbage' }
-        else h.openai.mode = { kind: 'card', card: { name: 'Maria Okafor', company: 'Sunrise Realty Group', role: 'Broker', emails: ['maria@sunrise.example'], phones: ['(602) 555-0142'], website: 'sunrise.example', address: '12 Main St, Phoenix, AZ', tags: ['Luxury'], notes: 'Met at expo', confidence: 0.62, needs_review: true } }
+        if (kind === 'error') h.inference.mode = { kind: 'http-error', status: 500, body: 'upstream-internal-detail-abc123' }
+        else if (kind === 'garbage') h.inference.mode = { kind: 'garbage' }
+        else h.inference.mode = { kind: 'card', card: { name: 'Maria Okafor', company: 'Sunrise Realty Group', role: 'Broker', emails: ['maria@sunrise.example'], phones: ['(602) 555-0142'], website: 'sunrise.example', address: '12 Main St, Phoenix, AZ', tags: ['Luxury'], notes: 'Met at expo', confidence: 0.62, needs_review: true } }
         res.writeHead(200).end('ok')
         return
       }

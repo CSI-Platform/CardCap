@@ -18,7 +18,6 @@ Use this folder for future development, commits, and deploys. The earlier Codex 
 
 The Worker expects these secrets to be configured in Cloudflare:
 
-- `OPENAI_API_KEY`
 - `SESSION_SECRET` (32+ random characters; rotating it signs everyone out)
 - `RESEND_API_KEY` (sender domain must be verified in Resend, DKIM green)
 - `TURNSTILE_SECRET_KEY` (paired with the public `TURNSTILE_SITE_KEY` var in wrangler.jsonc)
@@ -80,6 +79,6 @@ After deployment, verify:
 Invoke-RestMethod -Uri 'https://cardcap.codylecates.workers.dev/api/health'
 ```
 
-Expected: JSON with `ok: true` and `extractor: openai`.
+Expected: JSON with `ok: true` and `extractor: cloudflare`.
 
-For full upload testing, unlock with the beta session, upload a real card image, confirm `extractionMode` is `openai`, then delete the temporary contact.
+For full upload testing, unlock with the beta session, upload a real card image, confirm `extractionMode` is `cloudflare`, then delete the temporary contact.

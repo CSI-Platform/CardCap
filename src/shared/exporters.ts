@@ -49,6 +49,7 @@ function vcardText(value: string): string {
 }
 
 export function exportContactsCsv(contacts: Contact[]): string {
+  const withSources = contacts.some(contact => contact.source)
   const rows = contacts.map((inputContact) => {
     const contact = normalizeContactTextFields(inputContact)
     return [
@@ -63,11 +64,13 @@ export function exportContactsCsv(contacts: Contact[]): string {
       contact.status,
       contact.nextStep,
       contact.notes,
+      ...(withSources ? [contact.source?.url ?? '', contact.source?.checkedAt ?? ''] : []),
     ]
       .map((value) => (typeof value === 'string' && value.startsWith('"') && value.endsWith('"') ? value : csvCell(value)))
       .join(',')
   })
-  return [CSV_HEADERS.join(','), ...rows].join('\n')
+  const headers = withSources ? [...CSV_HEADERS, 'source_url', 'captured_at'] : CSV_HEADERS
+  return [headers.join(','), ...rows].join('\n')
 }
 
 export function exportContactsJson(contacts: Contact[]): string {
@@ -81,7 +84,7 @@ export function exportContactsVcard(contacts: Contact[]): string {
       const lines = [
         'BEGIN:VCARD',
         'VERSION:3.0',
-        `FN:${vcardText(contact.name)}`,
+        `FN:${vcardText(contact.name || contact.company)}`,
       ]
       if (contact.company) lines.push(`ORG:${vcardText(contact.company)}`)
       if (contact.role) lines.push(`TITLE:${vcardText(contact.role)}`)
